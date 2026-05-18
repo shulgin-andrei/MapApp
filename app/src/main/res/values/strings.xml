@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MapApp</string>
+    <string name="move">Move</string>
+    <string name="delete">Delete</string>
+</resources>

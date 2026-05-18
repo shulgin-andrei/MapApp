@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <color name="primary_green">#50C878</color>  <!-- getting rid of purple -->
+    <color name="primary_dark_green">#3e9c5d</color> <!-- for status bar -->
+    <color name="accent_light">#90EE90</color>    <!-- just soft -->
+
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
