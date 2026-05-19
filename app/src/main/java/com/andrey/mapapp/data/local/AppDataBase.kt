@@ -18,7 +18,7 @@ import com.andrey.mapapp.data.local.entities.SourceEntity
         SourceEntity::class,
         ExpeditionEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

@@ -61,6 +61,9 @@ import com.andrey.mapapp.data.local.entities.SourceEntity
 import com.andrey.mapapp.data.local.enums.MarkerType
 import com.andrey.mapapp.data.local.enums.SourceTypeEnum
 import com.andrey.mapapp.data.network.RetrofitClient
+import com.andrey.mapapp.ui.ExpeditionDrawerContent
+import com.andrey.mapapp.ui.MarkerBottomSheet
+import com.andrey.mapapp.ui.SourceBottomSheet
 import com.andrey.mapapp.utils.WindAnalyzer
 import com.andrey.mapapp.utils.WindRoseOverlay
 import com.andrey.mapapp.utils.WindStat
@@ -85,6 +88,10 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.ScaleBarOverlay
 import org.osmdroid.views.overlay.compass.CompassOverlay
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import java.time.Instant
+import java.time.ZoneId.systemDefault
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 private const val PREFS_NAME = "map_prefs"
 private const val KEY_LAT = "last_lat"
@@ -265,7 +272,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                         onDetailsClick = { exp ->
                             val intent =
                                 Intent(this@MainActivity, ExpeditionSamplesActivity::class.java)
-                            intent.putExtra("EXPEDITION_ID", exp.id) // Передаем ID, чтобы знать, что загружать
+                            intent.putExtra(
+                                "EXPEDITION_ID",
+                                exp.id
+                            ) // Передаем ID, чтобы знать, что загружать
                             intent.putExtra("EXPEDITION_NAME", exp.name) // Для заголовка окна
                             //startActivity(intent)
                             getSampleLocation.launch(intent)
@@ -597,6 +607,17 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         return this.text.toString().replace(',', '.').toDoubleOrNull() ?: default
     }
 
+    // time for sample entity
+    fun getCurrentTime(): String {
+        val instant = Instant.ofEpochMilli(System.currentTimeMillis())
+
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneOffset.UTC)
+
+        return formatter.format(instant)
+        // for example "2026-05-19T12:30:45Z"
+    }
+
     // whole redact and delete thing from down side of the screen
     fun openMarkerSheet(marker: Marker?, point: GeoPoint?, db: AppDataBase) {
 
@@ -624,7 +645,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     lon = newLon,
                     title = title,
                     description = desc,
-                    code = code
+                    code = code,
+                    createdAt = getCurrentTime()
                 )
                 db.sampleDao().insertItem(entity)
             }
@@ -695,11 +717,27 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     } else {
                         // doing an api call if not
                         try {
+                            // current time in Long
+                            val millis = System.currentTimeMillis()
+                            val localDateTime = Instant.ofEpochMilli(millis)
+                                .atZone(systemDefault())
+                                .toLocalDateTime()
+                            // formated to string
+                            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+                            val endDateString = localDateTime.format(formatter)
+                            // start date
+                            val monthsToSubtract = 12L
+                            val startDate = localDateTime.minusMonths(monthsToSubtract)
+                            val startDateString = startDate.format(formatter)
+
+                            Log.d("Time for WIND", "start: ${startDateString}, end: ${endDateString}")
+
                             val response = RetrofitClient.apiService.getHistoryWeather(
                                 lat = center.latitude,
                                 lon = center.longitude,
-                                startDate = "2024-01-01", // Пример периода
-                                endDate = "2024-01-31"
+                                startDate = startDateString, // Пример периода
+                                endDate = endDateString
                             )
                             val stats = WindAnalyzer().process(response)
 

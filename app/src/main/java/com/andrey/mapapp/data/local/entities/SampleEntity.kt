@@ -22,7 +22,7 @@ data class SampleEntity (
     val expeditionId: Long,
     val lat: Double,
     val lon: Double,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: String,
     val title: String? = null,
     val description: String? = null,
     val code: String? = null

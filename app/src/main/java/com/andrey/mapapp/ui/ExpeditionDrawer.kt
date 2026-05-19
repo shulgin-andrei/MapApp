@@ -1,4 +1,4 @@
-package com.andrey.mapapp
+package com.andrey.mapapp.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
