@@ -20,7 +20,8 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
     // call-back
     var onDelete: ((Int) -> Unit)? = null
     var onSave: ((String, String) -> Unit)? = null
-    var onWindRose: ((Int) -> Unit)? = null
+    var onWindRose: ((Int, Boolean) -> Unit)? = null
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,8 +83,15 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
 
         windBtn.setOnClickListener {
             sourceId?.let { id ->
-                onWindRose?.invoke(id)
-                dismiss() // Закрываем шторку, чтобы увидеть результат на карте
+                onWindRose?.invoke(id, false)
+                dismiss()
+            }
+        }
+        // updating by nulling the windDataJson of source
+        updWindBtn.setOnClickListener {
+            sourceId?.let { id ->
+                onWindRose?.invoke(id, true)
+                dismiss()
             }
         }
 

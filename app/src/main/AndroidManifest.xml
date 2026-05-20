@@ -22,6 +22,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MapApp">
         <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+        <activity
             android:name=".ExpeditionSamplesActivity"
             android:exported="false" />
         <activity
@@ -33,6 +36,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

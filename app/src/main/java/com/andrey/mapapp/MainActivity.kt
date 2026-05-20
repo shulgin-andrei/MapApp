@@ -64,6 +64,7 @@ import com.andrey.mapapp.data.network.RetrofitClient
 import com.andrey.mapapp.ui.ExpeditionDrawerContent
 import com.andrey.mapapp.ui.MarkerBottomSheet
 import com.andrey.mapapp.ui.SourceBottomSheet
+import com.andrey.mapapp.utils.DominantWindOverlay
 import com.andrey.mapapp.utils.WindAnalyzer
 import com.andrey.mapapp.utils.WindRoseOverlay
 import com.andrey.mapapp.utils.WindStat
@@ -105,6 +106,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     private lateinit var drawingControls: LinearLayout
 
     // important stuff
+    private lateinit var settings: AppSettings
+    private var currentPeriod: Int = 1
     private lateinit var expRep: ExpeditionRepository // the thing, that's keeping track of last created expedition and of instance of rep itself
     private lateinit var db: AppDataBase    // database
 
@@ -115,6 +118,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     private val tempPoints = mutableListOf<GeoPoint>() // all the points created in process of drawing the source
     private var previewOverlay: Overlay? = null // for demo drawing preview, sets over mapView like an overlay
     private var currentWindOverlay: WindRoseOverlay? = null
+    private var currentDominantWindOverlay: DominantWindOverlay? = null
 
     private val getSampleLocation = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
@@ -141,6 +145,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        settings = AppSettings(this)
+        currentPeriod = settings.getWindPeriod()
 
         db = AppDataBase.createDataBase(this)
 
@@ -251,13 +258,15 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 drawerState = drawerState,
                 gesturesEnabled = drawerState.isOpen,
                 drawerContent = {
-
+                    // drawer with connecting callbacks
                     ExpeditionDrawerContent(
                         expeditions = expeditions,
                         activeId = activeId,
                         onSelect = { id ->
                             scope.launch {
                                 expRep.setActiveExpedition(id)
+                                currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
+                                currentDominantWindOverlay = null
                                 currentWindOverlay?.let { mapView.overlays.remove(it) }
                                 currentWindOverlay = null
                                 drawerState.close()
@@ -268,6 +277,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                             lifecycleScope.launch(Dispatchers.IO) {
                                 expRep.deleteExpedition(expedition)
                             }
+                        },
+                        onSettingsClick = {
+                            startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                         },
                         onDetailsClick = { exp ->
                             val intent =
@@ -292,7 +304,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                         // making it a root layout
                         val root = layoutInflater.inflate(R.layout.activity_main, null)
 
-                        // Инициализируем mapView и кнопки из раздутого XML
+                        // main xml
                         mapView = root.findViewById(R.id.map_view)
                         drawingControls = root.findViewById(R.id.drawing_controls)
                         val buttonFinish = root.findViewById<Button>(R.id.button_finish_drawing)
@@ -312,7 +324,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     }
                 )
 
-                // Кнопка гамбургер поверх карты (если её нет в XML)
+                // burger button
                 Box(modifier = Modifier.fillMaxSize()) {
                     SmallFloatingActionButton(
                         onClick = { scope.launch { drawerState.open() } },
@@ -322,6 +334,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     }
                 }
             }
+            // add dialog pop
             if (showAddDialog) {
                 AlertDialog(
                     onDismissRequest = {
@@ -342,7 +355,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                         Button(
                             shape = RoundedCornerShape(8.dp),
                             colors = ButtonDefaults.buttonColors(
-                                // Явно указываем Compose-цвет через полный путь, чтобы избежать конфликтов
                                 containerColor = androidx.compose.ui.graphics.Color(0xFF90EE90),
                                 contentColor = androidx.compose.ui.graphics.Color.Black
                             ),
@@ -354,14 +366,14 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                                             dateCreated = System.currentTimeMillis()
                                         )
                                         val selectedExp = db.expeditionDao().insertExpedition(newExp)
+                                        currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
                                         currentWindOverlay?.let { mapView.overlays.remove(it) }
                                         expRep.setActiveExpedition(selectedExp)
 
-                                        // Закрываем и очищаем в главном потоке
+                                        // cleaning up
                                         withContext(Dispatchers.Main) {
                                             showAddDialog = false
                                             newExpName = ""
-                                            // Можно сразу закрыть Drawer, если нужно
                                             scope.launch { drawerState.close() }
                                         }
                                     }
@@ -440,8 +452,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         val zoom = mapView.zoomLevelDouble
 
         prefs.edit().apply {
-            // SharedPreferences не умеют хранить Float/Double высокой точности напрямую,
-            // поэтому переводим в String, чтобы не потерять точность координат
+            // SharedPreferences cannot save Float/Double with high effeciancy directly
+            // so we parsing it to string
             putString(KEY_LAT, center.latitude.toString())
             putString(KEY_LON, center.longitude.toString())
             putFloat(KEY_ZOOM, zoom.toFloat())
@@ -454,18 +466,17 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
         val latStr = prefs.getString(KEY_LAT, null)
         val lonStr = prefs.getString(KEY_LON, null)
-        val zoom = prefs.getFloat(KEY_ZOOM, 10f) // 10f — дефолтный зум, если запуск первый
+        val zoom = prefs.getFloat(KEY_ZOOM, 10f) // default zoom
 
         if (latStr != null && lonStr != null) {
-            val lat = latStr.toDoubleOrNull() ?: 55.015 // дефолтная широта, если что-то пошло не так
-            val lon = lonStr.toDoubleOrNull() ?: 82.9346 // дефолтная долгота
+            val lat = latStr.toDoubleOrNull() ?: 55.015 // default coords
+            val lon = lonStr.toDoubleOrNull() ?: 82.9346
 
             val targetPoint = GeoPoint(lat, lon)
             mapView.controller.setCenter(targetPoint)
             mapView.controller.setZoom(zoom.toDouble())
         } else {
-            // Если запускаемся вообще впервые и сохраненных координат нет,
-            // ставим какую-то базовую точку по умолчанию
+            // default
             mapView.controller.setCenter(GeoPoint(55.015, 82.9346))
             mapView.controller.setZoom(10.0)
         }
@@ -477,10 +488,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         lifecycleScope.launch {
             repository.currentExpeditionId.flatMapLatest { expId ->
                 if (expId == null) {
-                    // Если экспедиции нет, возвращаем пустой список
                     flowOf(emptyList())
                 } else {
-                    // Если есть ID — берем пробы только этой экспедиции
                     db.sampleDao().getSamplesByExpedition(expId)
                 }
             }.collect { samples ->
@@ -520,7 +529,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 if (expId == null) {
                     flowOf(emptyList())
                 } else {
-                    // Берем источники только текущей экспедиции
                     db.sourceDao().getSourcesByExpedition(expId)
                 }
             }.collect { sources ->
@@ -700,7 +708,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             }
         }
 
-        sheet.onWindRose = { sourceId ->
+        sheet.onWindRose = { sourceId, update ->
             lifecycleScope.launch {
                 val source = db.sourceDao().findById(sourceId)
                 source?.let {
@@ -709,6 +717,11 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                         it.geometry.map { p -> p.latitude }.average(),
                         it.geometry.map { p -> p.longitude }.average()
                     )
+                    // we null this shi if we need to update
+                    // bcs of that we can use this one call-back for two buttons in sourceBottomSheet
+                    if(update) {
+                        it.windDataJson = null
+                    }
 
                     if (it.windDataJson != null) {
                         // if there's a cash - we're taking it
@@ -727,7 +740,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
                             val endDateString = localDateTime.format(formatter)
                             // start date
-                            val monthsToSubtract = 12L
+                            val monthsToSubtract = settings.getWindPeriod().toLong()
                             val startDate = localDateTime.minusMonths(monthsToSubtract)
                             val startDateString = startDate.format(formatter)
 
@@ -773,7 +786,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         currentDrawingType = type
         tempPoints.clear()
         tempPoints.add(firstPoint)
-        Log.d("бля", "зашло в функцию")
+        Log.d("DRAWING SOURCES", "start of drawing")
         drawingControls.visibility = View.VISIBLE
         updateDrawingPreview()
     }
@@ -784,9 +797,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         mapView.overlays.remove(previewOverlay)
         previewOverlay = null
         drawingControls.visibility = View.GONE
-        Log.d("бля", "вышло")
+        Log.d("DRAWING SOURCES", "canceled")
         mapView.invalidate()
-        Toast.makeText(this, "Рисование отменено", Toast.LENGTH_SHORT).show()
+        //Toast.makeText(this, "Рисование отменено", Toast.LENGTH_SHORT).show()
     }
 
     fun updateDrawingPreview() {
@@ -911,6 +924,11 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             mapView.invalidate()
             Toast.makeText(this, "Оверлэй вырублен", Toast.LENGTH_SHORT).show()
         }
+        if (currentWindOverlay!= null) {
+            currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
+            currentDominantWindOverlay = null
+            mapView.invalidate()
+        }
 
         //testWindApi()
         return false
@@ -983,13 +1001,20 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     private fun showWindRose(center: GeoPoint, stats: List<WindStat>) {
         // clearing current wind rose if it exists
         currentWindOverlay?.let { mapView.overlays.remove(it) }
+        currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
 
         // new layer
-        val overlay = WindRoseOverlay(center, stats)
-        currentWindOverlay = overlay
-
+        if(settings.isFullRoseEnabled()) {
+            val overlay = WindRoseOverlay(center, stats)
+            currentWindOverlay = overlay
+            mapView.overlays.add(overlay)
+        }
+        else {
+            val overlay = DominantWindOverlay(center, stats)
+            currentDominantWindOverlay = overlay
+            mapView.overlays.add(overlay)
+        }
         // add update
-        mapView.overlays.add(overlay)
         mapView.invalidate()
     }
 
@@ -1006,6 +1031,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         super.onResume()
         if (::mapView.isInitialized) {
             mapView.onResume()
+        }
+        val newPeriod = settings.getWindPeriod()
+        if (newPeriod != currentPeriod) {
+            currentPeriod = newPeriod
         }
     }
 

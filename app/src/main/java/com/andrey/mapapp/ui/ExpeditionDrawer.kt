@@ -1,8 +1,10 @@
 package com.andrey.mapapp.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -26,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.andrey.mapapp.data.local.entities.ExpeditionEntity
 
 @Composable
@@ -34,6 +38,7 @@ fun ExpeditionDrawerContent(
     activeId: Long?,
     onSelect: (Long) -> Unit,
     onAddClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     onDeleteClick: (ExpeditionEntity) -> Unit,
     onDetailsClick: (ExpeditionEntity) -> Unit
 ) {
@@ -51,7 +56,7 @@ fun ExpeditionDrawerContent(
             LazyColumn(modifier = Modifier.weight(1f)) {
                 items(expeditions) { exp ->
                     NavigationDrawerItem(
-                        label = { Text(exp.name) },
+                        label = { Text(exp.name, style = arialStyle, fontSize = 16.sp) },
                         selected = exp.id == activeId,
                         onClick = { onSelect(exp.id) },
                         shape = RoundedCornerShape(8.dp),
@@ -69,6 +74,8 @@ fun ExpeditionDrawerContent(
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             Button(
                 onClick = onAddClick,
                 colors = ButtonDefaults.buttonColors(
@@ -76,12 +83,29 @@ fun ExpeditionDrawerContent(
                     contentColor = Color.Black                  // text
                 ),
 
-                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
-                Text("Новая экспедиция", style = arialStyle)
+                Text("Новая экспедиция", style = arialStyle, fontSize = 18.sp)
             }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Button(
+                onClick = onSettingsClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF90EE90), //button
+                    contentColor = Color.Black                  // text
+                ),
+
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Icon(Icons.Default.Settings, contentDescription = null)
+                Text("Настройки", style = arialStyle, fontSize = 18.sp)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }

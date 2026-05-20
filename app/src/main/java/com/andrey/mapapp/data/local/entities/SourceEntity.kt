@@ -28,5 +28,5 @@ data class SourceEntity (
     val description: String,
     val geometry: List<GeoPoint>,
     val hazardLevel: Double = 1.0, // approximate thing, dunno how to measure this
-    val windDataJson: String? = null // data for windRozeOverlay
+    var windDataJson: String? = null // data for windRozeOverlay
 )

@@ -91,8 +91,10 @@ class ExpeditionSamplesActivity : AppCompatActivity() {
                                     resultIntent.putExtra("TARGET_LAT", sample.lat)
                                     resultIntent.putExtra("TARGET_LON", sample.lon)
                                     resultIntent.putExtra("TARGET_EXP", sample.expeditionId)
+                                    // putting RESULT_OK triggers the launched in Main method, that launches afters this Activity finished
+                                    // and it's sets map to sample we clicked on
                                     setResult(RESULT_OK, resultIntent)
-                                    finish() // Закрываем список и возвращаемся к карте
+                                    finish()
                                 },
                                 onDeleteClick = {
                                     lifecycle.coroutineScope.launch {
@@ -109,27 +111,26 @@ class ExpeditionSamplesActivity : AppCompatActivity() {
 
     private fun exportToGeoJson(samples: List<SampleEntity>, expeditionName: String, expeditionId: Long) {
         try {
-            // 1. Создаем корень GeoJSON
+            // creating root for GeoJSON
             val geoJson = JSONObject()
             geoJson.put("type", "FeatureCollection")
 
             val features = JSONArray()
 
-            // 2. Наполняем массив точками
+            // filling up the array with dots
             samples.forEach { sample ->
                 val feature = JSONObject()
                 feature.put("type", "Feature")
 
-                // Геометрия (координаты: сначала долгота!, потом широта)
                 val geometry = JSONObject()
                 geometry.put("type", "Point")
                 geometry.put("coordinates", JSONArray().apply {
-                    put(sample.lon) // В GeoJSON принято Longitude, Latitude
+                    put(sample.lon) // GeoJSON there is Longitude, Latitude
                     put(sample.lat)
                 })
                 feature.put("geometry", geometry)
 
-                // Данные пробы
+                // sample date
                 val properties = JSONObject()
                 properties.put("name", sample.title)
                 properties.put("description", sample.description)
@@ -141,12 +142,11 @@ class ExpeditionSamplesActivity : AppCompatActivity() {
 
             geoJson.put("features", features)
 
-            // 3. Сохраняем файл или делимся им
+            // save of share
             shareFile(geoJson.toString(), "$expeditionName.geojson")
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // Тут можно вывести Toast об ошибке
         }
     }
 
@@ -189,7 +189,7 @@ fun SampleItem(sample: SampleEntity,
             modifier = Modifier
                 .padding(16.dp)
                 .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically // Центрируем кнопку по вертикали относительно текста
+            verticalAlignment = Alignment.CenterVertically
         ) {
 
 

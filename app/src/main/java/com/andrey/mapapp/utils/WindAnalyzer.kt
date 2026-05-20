@@ -43,7 +43,7 @@ class WindAnalyzer {
             return Gson().toJson(stats)
         }
 
-        fun unpackStats(json: String): List<WindStat> {
+        fun unpackStats(json: String?): List<WindStat> {
             val type = object : TypeToken<List<WindStat>>() {}.type
             return Gson().fromJson(json, type)
         }
