@@ -195,9 +195,64 @@ class SettingsActivity : AppCompatActivity() {
                             }
                         )
                     }
+                    // ===========================================================================
+                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // compass display mode switch ===============================================
+                    // either to north, either to device internal thing
+
+//                    Text(
+//                        text = "Работа компаса",
+//                        style = arialStyle,
+//                        fontSize = 20.sp,
+//                        color = Color.Black
+//                    )
+//                    Spacer(modifier = Modifier.height(8.dp))
+//
+//                    // switch state
+//                    var compassDeviceMode by remember { mutableStateOf(settings.isCompassDeviceModeEnabled()) }
+//
+//                    Row(
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .toggleable(
+//                                value = compassDeviceMode,
+//                                onValueChange = { newValue ->
+//                                    compassDeviceMode = newValue
+//                                    settings.saveCompassMode(newValue) // saving
+//                                }
+//                            )
+//                            .padding(vertical = 10.dp),
+//                        verticalAlignment = Alignment.CenterVertically
+//                    ) {
+//                        Column(modifier = Modifier.weight(1f)) {
+//                            Text(
+//                                text = "Компас устройства (Режим навигации)",
+//                                fontSize = 18.sp,
+//                                color = Color.Black
+//                            )
+//                            Spacer(modifier = Modifier.height(8.dp))
+//                            Text(
+//                                text = if (compassDeviceMode) "Стрелка вращается за твоим телом (датчик телефона)" else "Стрелка статично указывает на Север карты",
+//                                fontSize = 16.sp,
+//                                color = Color.Gray
+//                            )
+//                        }
+//
+//                        // switch
+//                        Switch(
+//                            checked = compassDeviceMode,
+//                            onCheckedChange = { newValue ->
+//                                compassDeviceMode = newValue
+//                                settings.saveCompassMode(newValue)
+//                            }
+//                        )
+//                    }
 
                 }
-                // ===========================================================================
+
             }
         }
     }

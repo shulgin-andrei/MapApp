@@ -123,6 +123,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     private var currentWindOverlay: WindRoseOverlay? = null
     private var currentDominantWindOverlay: DominantWindOverlay? = null
     private lateinit var myLocationOverlay: MyLocationNewOverlay
+    private lateinit var mapNorthCompassOverlay: CompassOverlay
 
     // FOR ON CLICK IN EXPEDITION-SAMPLE ACTIVITY, GETS OK AND GOES TO SAMPLE ON MAP
     private val getSampleLocation = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -447,7 +448,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 //        compassOverlay.enableCompass()
 
         // this just determines location of NORTH relatively to rotation of map
-        val mapNorthCompassOverlay = object: CompassOverlay(this, mapView) {
+        mapNorthCompassOverlay = object: CompassOverlay(this, mapView) {
             override fun draw(c: Canvas?, pProjection: Projection?) {
                 drawCompass(c, -mapView.mapOrientation, pProjection?.screenRect)
             }
@@ -512,6 +513,31 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             mapView.controller.setZoom(10.0)
         }
     }
+//    private fun configureCompassProvider() {
+//        if (!::mapNorthCompassOverlay.isInitialized) return
+//
+//        if (settings.isCompassDeviceModeEnabled()) {
+//            // Режим НАВИГАЦИИ: принудительно задаем провайдер датчиков устройства (если вдруг сбрасывали)
+//            val deviceProvider = org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider(this)
+//            mapNorthCompassOverlay.setOrientationProvider(deviceProvider)
+//            mapNorthCompassOverlay.enableCompass() // Стартуем опрос датчиков
+//        } else {
+//            // Режим КАРТЫ (Север): просто вырубаем опрос датчиков устройства!
+//            // Провайдер при этом внутри библиотеки сбрасывать в null не нужно
+//            mapNorthCompassOverlay.disableCompass()
+//
+//            // Вручную сбрасываем азимут в 0, чтобы стрелка смотрела строго на север карты
+//            // (так как drawCompass будет рисовать статичную стрелку)
+//            try {
+//                val field = CompassOverlay::class.java.getDeclaredField("mAzimuth")
+//                field.isAccessible = true
+//                field.setFloat(mapNorthCompassOverlay, 0f)
+//            } catch (e: Exception) {
+//                // Если по какой-то причине рефлексия не сработает, приложение хотя бы не упадет
+//                e.printStackTrace()
+//            }
+//        }
+//    }
 
     // loading all of data from db and making markers out of it
     fun loadDataFromDB(db: AppDataBase, repository: ExpeditionRepository) {
@@ -1133,6 +1159,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         if (::myLocationOverlay.isInitialized) {
             myLocationOverlay.disableMyLocation()
         }
+//        if (::mapNorthCompassOverlay.isInitialized) {
+//            mapNorthCompassOverlay.disableCompass()
+//        }
         saveMapState()
 
     }
@@ -1150,6 +1179,13 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         if (::myLocationOverlay.isInitialized) {
             myLocationOverlay.enableMyLocation()
         }
+        // checking for change of compass setting and enabling compass
+//        if (::mapNorthCompassOverlay.isInitialized) {
+//            configureCompassProvider()
+//        }
+//        if (::mapView.isInitialized) {
+//            mapView.invalidate()
+//        }
     }
 
 }

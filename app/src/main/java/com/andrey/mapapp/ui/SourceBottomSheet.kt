@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import com.andrey.mapapp.R
 import com.andrey.mapapp.data.local.AppDataBase
@@ -70,6 +71,17 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
         saveBtn.setOnClickListener {
             val title = titleEdit.text.toString()
             val desc = descEdit.text.toString()
+            var isValid = true
+
+            if (title.isBlank()) {
+                titleEdit.error = "Введите название точки"
+                isValid = false
+            }
+            if (!isValid) {
+                Toast.makeText(context, "Заполните обязательные поля корректно", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             onSave?.invoke(title, desc)
             dismiss()
         }

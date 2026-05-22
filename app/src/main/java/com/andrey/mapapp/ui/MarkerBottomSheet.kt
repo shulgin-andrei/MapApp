@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import com.andrey.mapapp.R
 import com.andrey.mapapp.data.local.AppDataBase
@@ -78,6 +79,22 @@ class MarkerBottomSheet : BottomSheetDialogFragment() {
             val code = codeEdit.text.toString()
             val finalLat = latEdit.text.toString().replace(',', '.').toDoubleOrNull() ?: defaultLat
             val finalLon = lonEdit.text.toString().replace(',', '.').toDoubleOrNull() ?: defaultLon
+
+            var isValid = true
+
+            if (code.isBlank()) {
+                codeEdit.error = "Введите код пробы"
+                isValid = false
+            }
+            if (title.isBlank()) {
+                titleEdit.error = "Введите название точки"
+                isValid = false
+            }
+
+            if (!isValid) {
+                Toast.makeText(context, "Заполните обязательные поля корректно", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
 
             onSave?.invoke(title, desc, code, finalLat, finalLon)
             dismiss()
