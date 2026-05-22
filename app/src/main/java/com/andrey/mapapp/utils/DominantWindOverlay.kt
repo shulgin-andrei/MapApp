@@ -17,7 +17,7 @@ class DominantWindOverlay(
 ) : Overlay() {
 
     // Фиксированная длина линии на экране в пикселях
-    private val lineLength = 150f
+    private val lineLength = 500f
 
     // Настраиваем краску для красивой пунктирной линии
     private val linePaint = Paint().apply {

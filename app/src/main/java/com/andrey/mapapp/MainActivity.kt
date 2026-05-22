@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.location.Location
+import android.location.LocationManager
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -89,6 +91,7 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.ScaleBarOverlay
 import org.osmdroid.views.overlay.compass.CompassOverlay
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.time.Instant
 import java.time.ZoneId.systemDefault
 import java.time.ZoneOffset
@@ -119,7 +122,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     private var previewOverlay: Overlay? = null // for demo drawing preview, sets over mapView like an overlay
     private var currentWindOverlay: WindRoseOverlay? = null
     private var currentDominantWindOverlay: DominantWindOverlay? = null
+    private lateinit var myLocationOverlay: MyLocationNewOverlay
 
+    // FOR ON CLICK IN EXPEDITION-SAMPLE ACTIVITY, GETS OK AND GOES TO SAMPLE ON MAP
     private val getSampleLocation = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             lifecycleScope.launch {
@@ -141,7 +146,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         }
     }
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -160,6 +164,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
         composeView = findViewById<ComposeView>(R.id.compose_view)
         composeSetUp()
+
+
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -240,7 +246,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
     }
 
-
+    // WHOLE LEFT SIDE DRAWER UI SET UP ============================================================
     fun composeSetUp() {
         composeView.setContent {
             val scope = rememberCoroutineScope()
@@ -279,6 +285,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                             }
                         },
                         onSettingsClick = {
+                            clearWindRose()
                             startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                         },
                         onDetailsClick = { exp ->
@@ -324,14 +331,32 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     }
                 )
 
-                // burger button
+                // burger button and gps button
                 Box(modifier = Modifier.fillMaxSize()) {
+                    // bg
                     SmallFloatingActionButton(
                         onClick = { scope.launch { drawerState.open() } },
                         modifier = Modifier.padding(16.dp).align(Alignment.TopStart)
                     ) {
                         Icon(Icons.Default.Menu, contentDescription = null)
                     }
+                    //pgs
+                    SmallFloatingActionButton(
+                        onClick = {
+                            checkLocationPermissionAndEnableGps()
+                        },
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF90EE90), // Твой зеленый цвет
+                        contentColor = androidx.compose.ui.graphics.Color.Black,
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .align(Alignment.BottomEnd) // bottom right
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.GpsFixed,
+                            contentDescription = "Показать меня"
+                        )
+                    }
+
                 }
             }
             // add dialog pop
@@ -413,6 +438,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         rotationGestureOverlay.isEnabled
         mapView.overlays.add(rotationGestureOverlay) // rotation rules
         val dm: DisplayMetrics = resources.displayMetrics
+        val screenWidth = dm.widthPixels / dm.density // pure dp
+        val screenHeight = dm.heightPixels / dm.density
         // compass with internal thing means the compass of DEVICE
         // usable in case of navigating to point
 //        val compassOverlay = CompassOverlay(this,
@@ -425,8 +452,12 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 drawCompass(c, -mapView.mapOrientation, pProjection?.screenRect)
             }
         }
-        Log.d("лол", dm.heightPixels.toString())
+        val compassIconWidth = 45f
+        val marginX = screenWidth - compassIconWidth * 0.9f
+        val marginY = screenHeight - compassIconWidth * 2f
+        Log.d("лол", "x = ${dm.widthPixels/dm.density} y = ${dm.heightPixels}")
 
+        mapNorthCompassOverlay.setCompassCenter(marginX, marginY)
         mapView.overlays.add(mapNorthCompassOverlay)
 
         val scaleBarOverlay = ScaleBarOverlay(mapView)
@@ -626,6 +657,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         // for example "2026-05-19T12:30:45Z"
     }
 
+    // BOTTOM SHEET'S FUNCs ========================================================================
     // whole redact and delete thing from down side of the screen
     fun openMarkerSheet(marker: Marker?, point: GeoPoint?, db: AppDataBase) {
 
@@ -765,8 +797,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 }
             }
         }
-
-
         // basically same thing with openMarkerSheet
         sheet.onDelete = { sourceId ->
             lifecycleScope.launch {
@@ -774,10 +804,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 Toast.makeText(this@MainActivity, "Источник удален", Toast.LENGTH_SHORT).show()
             }
         }
-
         sheet.show(supportFragmentManager, "SourceSheet")
     }
 
+    // DRAWING FUNCs =============================================================================
     // start of drawing the source
     // type - POINT, LINE, AREA
     // firstPoint - c'mon, you got this
@@ -848,21 +878,22 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         openSourceSheet(null, db = AppDataBase.createDataBase(this))
     }
 
+    // SAMPLE BY LOCATION ==========================================================================
     @SuppressLint("MissingPermission")
     private fun getCurrentLocationAndSave() {
         val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Запрашиваем последнее известное местоположение (самый быстрый способ)
+        // requesting for last registered location
         fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
             if (location != null) {
                 val lat = location.latitude
                 val lon = location.longitude
 
-                // Открываем твой диалог/экран создания пробы, но уже со вставленными координатами!
+                // if there is a last location - saving it
                 openMarkerSheet(null,GeoPoint(lat, lon), db)
             } else {
-                // Если lastLocation пустой (такое бывает, если GPS долго спал),
-                // запрашиваем свежую точку один раз
+                // else
+                // requesting location now
                 val locationRequest = Priority.PRIORITY_HIGH_ACCURACY
                 fusedLocationClient.getCurrentLocation(locationRequest, null)
                     .addOnSuccessListener { freshLocation ->
@@ -883,10 +914,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
 
         if (fineLocationGranted || coarseLocationGranted) {
-            // Разрешение получено, можно брать GPS
+            // permissions granted
             getCurrentLocationAndSave()
         } else {
-            // Пользователь отказал — выведи Toast или диалог
+            // no gps
             Toast.makeText(this, "Без GPS нельзя определить точку пробы", Toast.LENGTH_SHORT).show()
         }
     }
@@ -898,15 +929,80 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         if (fineLoc == PackageManager.PERMISSION_GRANTED || coarseLoc == PackageManager.PERMISSION_GRANTED) {
             getCurrentLocationAndSave()
         } else {
-            // Запрашиваем разрешения
+            // requesting permission
             requestLocationPermissionLauncher.launch(
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
             )
         }
     }
 
+
+    // FUNCs FOR USER LOCATION ===============================================================
+    private val requestGpsOverlayLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+
+        if (fineGranted || coarseGranted) {
+            // if permission granted - activating overlay
+            activateMyLocationOverlay()
+        } else {
+            Toast.makeText(this, "Не удалось включить GPS: нет разрешений", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkLocationPermissionAndEnableGps() {
+        val fineLoc = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarseLoc = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+        if (fineLoc == PackageManager.PERMISSION_GRANTED || coarseLoc == PackageManager.PERMISSION_GRANTED) {
+            // if they granted - activating overlay
+            activateMyLocationOverlay()
+        } else {
+            // requesting permissions if they aren't granted
+            requestGpsOverlayLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
+    private fun activateMyLocationOverlay() {
+        // checking for gps and stations
+        val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+        val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+
+        if (!isGpsEnabled && !isNetworkEnabled) {
+            Toast.makeText(this, "Включите геолокацию (GPS) в настройках телефона!", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // activating overlay
+        if (!::myLocationOverlay.isInitialized) {
+            val provider = org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider(this)
+            myLocationOverlay = MyLocationNewOverlay(provider, mapView).apply {
+                setDrawAccuracyEnabled(true)
+            }
+            mapView.overlays.add(myLocationOverlay)
+        }
+
+        // enabling and centring on user
+        myLocationOverlay.enableMyLocation()
+        myLocationOverlay.enableFollowLocation()
+
+        // smooth animation to user
+        myLocationOverlay.myLocation?.let { userPoint ->
+            mapView.controller.animateTo(userPoint)
+            mapView.controller.setZoom(18.0)
+        }
+    }
+
+    // =========================================================================================
     // closing all overlays infoWindows with touch
     // i guess its kinda bad idea if i would do sm more complicated
+    // UPDATED: in result, i do kinda same mentioned thing
+    // it seems okay
     override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
 //        Toast.makeText(this, "Tapped", Toast.LENGTH_SHORT).show()
 //        InfoWindow.closeAllInfoWindowsOn(mapView);
@@ -918,18 +1014,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             updateDrawingPreview()
             return true
         }
-        if(currentWindOverlay!=null) {
-            currentWindOverlay?.let { mapView.overlays.remove(it) }
-            currentWindOverlay = null
-            mapView.invalidate()
-            Toast.makeText(this, "Оверлэй вырублен", Toast.LENGTH_SHORT).show()
-        }
-        if (currentWindOverlay!= null) {
-            currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
-            currentDominantWindOverlay = null
-            mapView.invalidate()
-        }
-
+        clearWindRose()
         //testWindApi()
         return false
     }
@@ -998,12 +1083,15 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         }
     }
 
+    // wind rose stuff ============================================================================
     private fun showWindRose(center: GeoPoint, stats: List<WindStat>) {
         // clearing current wind rose if it exists
         currentWindOverlay?.let { mapView.overlays.remove(it) }
         currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
 
         // new layer
+        // depends on settings
+        // it's either a rose overlay, or just dominant wind arrow
         if(settings.isFullRoseEnabled()) {
             val overlay = WindRoseOverlay(center, stats)
             currentWindOverlay = overlay
@@ -1018,10 +1106,32 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         mapView.invalidate()
     }
 
+    private fun clearWindRose() {
+        if(currentWindOverlay!=null) {
+            currentWindOverlay?.let { mapView.overlays.remove(it) }
+            currentWindOverlay = null
+            //Toast.makeText(this, "Оверлэй вырублен", Toast.LENGTH_SHORT).show()
+        }
+        if (currentDominantWindOverlay!= null) {
+            currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
+            currentDominantWindOverlay = null
+        }
+        mapView.invalidate()
+    }
+
+    // defaults =================================================================================
+
     override fun onPause() {
         super.onPause()
         if (::mapView.isInitialized) {
             mapView.onPause()
+        }
+//        if (::mapNorthCompassOverlay.isInitialized) {
+//            mapNorthCompassOverlay.disableCompass()
+//        }
+        // battery save-wise feature
+        if (::myLocationOverlay.isInitialized) {
+            myLocationOverlay.disableMyLocation()
         }
         saveMapState()
 
@@ -1035,6 +1145,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         val newPeriod = settings.getWindPeriod()
         if (newPeriod != currentPeriod) {
             currentPeriod = newPeriod
+        }
+        // enabling after onPause
+        if (::myLocationOverlay.isInitialized) {
+            myLocationOverlay.enableMyLocation()
         }
     }
 

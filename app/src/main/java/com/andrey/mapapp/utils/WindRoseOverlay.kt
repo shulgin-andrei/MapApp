@@ -127,7 +127,7 @@ class WindRoseOverlay(
 ) : Overlay() {
 
     private var cachedBitmap: android.graphics.Bitmap? = null
-    private val scaleFactor = 6f
+    private val scaleFactor = 10f
     private val maxRadius = 200f // Ограничим размер для кэша
 
     // Краски выносим в init, чтобы не создавать в draw
@@ -199,7 +199,7 @@ class WindRoseOverlay(
 
                 // 2. Рисуем цифру скорости чуть дальше кончика лепестка
                 if (stat.frequency > 5) { // не рисуем для совсем мелких, чтобы не кучковались в центре
-                    val textDistance = radius + 25f // Смещение текста от кончика
+                    val textDistance = radius + 29f // Смещение текста от кончика
                     val tx = cx + (textDistance * cos(angleRad)).toFloat()
                     val ty = cy + (textDistance * sin(angleRad)).toFloat()
 
