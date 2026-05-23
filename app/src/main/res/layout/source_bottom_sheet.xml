@@ -123,6 +123,16 @@
         app:shapeAppearanceOverlay="@style/LessRoundedButton"
         app:strokeColor="#808080"
         app:strokeWidth="2dp" />
+    <Button
+        android:id="@+id/source_import_plan_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:backgroundTint="#e5e4e2"
+        android:text="Импортировать план для источника"
+        android:textColor="#000000"
+        app:shapeAppearanceOverlay="@style/LessRoundedButton"
+        app:strokeColor="#808080"
+        app:strokeWidth="2dp" />
 
     <Button
         android:id="@+id/source_delete_button"

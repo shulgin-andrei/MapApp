@@ -58,6 +58,7 @@ import com.andrey.mapapp.data.local.AppDataBase
 import com.andrey.mapapp.data.local.ExpeditionRepository
 import com.andrey.mapapp.data.local.MarkerData
 import com.andrey.mapapp.data.local.entities.ExpeditionEntity
+import com.andrey.mapapp.data.local.entities.PlannedPointEntity
 import com.andrey.mapapp.data.local.entities.SampleEntity
 import com.andrey.mapapp.data.local.entities.SourceEntity
 import com.andrey.mapapp.data.local.enums.MarkerType
@@ -179,6 +180,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         db.expeditionDao().clearTableAndResetIndex()
         db.sampleDao().clearTableAndResetIndex()
         db.sourceDao().clearTableAndResetIndex()}
+
 
 //        lifecycleScope.launch {
 //            db.sampleDao().clearTableAndResetIndex()
@@ -577,6 +579,52 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             }
 
         }
+        lifecycleScope.launch {
+            repository.currentExpeditionId.flatMapLatest { expId ->
+                if (expId == null) {
+                    flowOf(emptyList())
+                } else {
+                    // Тянем ВСЕ плановые точки для источников текущей экспедиции.
+                    // Для простоты вытащим через Flow (замени запрос в DAO на выборку по expeditionId,
+                    // либо, если делаем проще, выгребаем вообще все плановые точки, которые есть в базе)
+                    db.plannedPointsDao().getPointsByExpedition(expId)
+                    // Примечание: Чтобы не усложнять, давай в DAO сделаем метод getAllPlannedPoints()
+                    // и будем отображать их. Вот вариант со сбором всех точек:
+                }
+            }.collect { plannedPoints ->
+                // Очищаем старые маркеры плановых точек
+                val plannedToRemove = mapView.overlays.filter { overlay ->
+                    (overlay as? Marker)?.relatedObject.let { obj ->
+                        obj is MarkerData && obj.type == MarkerType.PLANNED
+                    }
+                }
+                mapView.overlays.removeAll(plannedToRemove)
+
+                // Рисуем новые плановые маркеры
+                plannedPoints.forEach { entity ->
+                    val marker = Marker(mapView).apply {
+                        position = GeoPoint(entity.latitude, entity.longitude)
+                        title = "Рекомендуемая проба: ${entity.distance}м"
+                        snippet = "Вес замера: ${(entity.weight * 100).toInt()}%"
+                        relatedObject = MarkerData(entity.id, MarkerType.PLANNED)
+
+                        // Ставим оранжевый маркер с прозрачностью (чтобы отличался от реальных проб)
+                        icon = getDrawable(R.drawable.blue_circle_icon) // Твоя иконка для плановых точек
+                        alpha = 0.6f
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+
+                        setOnMarkerClickListener { m, _ ->
+                            // При клике на плановую точку — сразу открываем шторку создания РЕАЛЬНОГО маркера пробы,
+                            // передавая туда координаты этой плановой точки!
+                            openMarkerSheet(null, m.position, db)
+                            true
+                        }
+                    }
+                    mapView.overlays.add(marker)
+                }
+                mapView.invalidate()
+            }
+        }
 
         // sources
         lifecycleScope.launch {
@@ -671,7 +719,29 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     fun EditText.toDoubleOrDefault(default: Double): Double {
         return this.text.toString().replace(',', '.').toDoubleOrNull() ?: default
     }
+    // fun for calculating points based on distance from source
+    private fun calculateTargetPoint(center: GeoPoint, distance: Double, bearing: Double): GeoPoint {
+        val earthRadius = 6371000.0 // Радиус Земли в метрах
 
+        // Переводим входные данные в радианы
+        val lat1 = Math.toRadians(center.latitude)
+        val lon1 = Math.toRadians(center.longitude)
+        val bearingRad = Math.toRadians(bearing)
+        val distRatio = distance / earthRadius
+
+        // Считаем новые широту и долготу в радианах
+        val lat2Rad = kotlin.math.asin(
+            kotlin.math.sin(lat1) * kotlin.math.cos(distRatio) +
+                    kotlin.math.cos(lat1) * kotlin.math.sin(distRatio) * kotlin.math.cos(bearingRad)
+        )
+        val lon2Rad = lon1 + kotlin.math.atan2(
+            kotlin.math.sin(bearingRad) * kotlin.math.sin(distRatio) * kotlin.math.cos(lat1),
+            kotlin.math.cos(distRatio) - kotlin.math.sin(lat1) * kotlin.math.sin(lat2Rad)
+        )
+
+        // Возвращаем готовый GeoPoint в градусах
+        return GeoPoint(Math.toDegrees(lat2Rad), Math.toDegrees(lon2Rad))
+    }
     // time for sample entity
     fun getCurrentTime(): String {
         val instant = Instant.ofEpochMilli(System.currentTimeMillis())
@@ -828,6 +898,79 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             lifecycleScope.launch {
                 db.sourceDao().deleteById(sourceId)
                 Toast.makeText(this@MainActivity, "Источник удален", Toast.LENGTH_SHORT).show()
+            }
+        }
+        sheet.onImportPlan = {
+                sourceId ->
+            lifecycleScope.launch {
+                val source = db.sourceDao().findById(sourceId)
+                if (source != null && source.windDataJson != null) {
+
+                    // 1. Берем центр источника
+                    val center = GeoPoint(
+                        source.geometry.map { p -> p.latitude }.average(),
+                        source.geometry.map { p -> p.longitude }.average()
+                    )
+
+                    // 2. Получаем угол главного выноса из ветра
+                    val stats = WindAnalyzer.unpackStats(source.windDataJson)
+                    // Ищем сектор с максимальной частотой
+                    val maxSector = stats.maxByOrNull { it.frequency } ?: return@launch
+                    // по направлению куда летит
+                    val bearing = ((maxSector.directionIndex * 45) + 180) % 360.0
+
+                    // 3. Наш JSON (захардкоженный тестовый вариант из твоего примера)
+                    val jsonString = """{
+              "observationPlan": {
+                "points": [
+                  { "distance": 60, "weight": 0.5 },
+                  { "distance": 180, "weight": 0.5 }
+                ]
+              }
+            }"""
+
+                    // 4. Простейший парсинг через JSONObject (чтобы не плотить DTO классы)
+                    val jsonObject = org.json.JSONObject(jsonString)
+                    val pointsArray =
+                        jsonObject.getJSONObject("observationPlan").getJSONArray("points")
+
+                    val pointsToSave = ArrayList<PlannedPointEntity>()
+
+                    for (i in 0 until pointsArray.length()) {
+                        val p = pointsArray.getJSONObject(i)
+                        val distance = p.getDouble("distance")
+                        val weight = p.getDouble("weight")
+
+                        // Вычисляем GPS координаты точки (Прямая геодезическая задача)
+                        val targetPoint = calculateTargetPoint(center, distance, bearing)
+
+                        pointsToSave.add(
+                            PlannedPointEntity(
+                                sourceId = sourceId,
+                                latitude = targetPoint.latitude,
+                                longitude = targetPoint.longitude,
+                                distance = distance,
+                                weight = weight
+                            )
+                        )
+                    }
+
+                    // 5. Чистим старый план этого источника и пишем новый
+                    db.plannedPointsDao().deleteBySourceId(sourceId)
+                    db.plannedPointsDao().insertPoints(pointsToSave)
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        "План точек импортирован!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Сначала рассчитайте розу ветров!",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
         sheet.show(supportFragmentManager, "SourceSheet")
@@ -1041,6 +1184,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             return true
         }
         clearWindRose()
+        createTestSourceWithWind(db)
         //testWindApi()
         return false
     }
@@ -1186,6 +1330,51 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 //        if (::mapView.isInitialized) {
 //            mapView.invalidate()
 //        }
+    }
+    private fun createTestSourceWithWind(db: AppDataBase) {
+        lifecycleScope.launch {
+            // 1. Получаем ID активной экспедиции
+            val expId = expRep.getOrCreateActiveId()
+
+            // 2. Генерируем фейковую статистику ветра (8 секторов)
+            // Сделаем так, чтобы сектор №1 (Северо-Восток, 45°) имел максимальную частоту (60%)
+            val testStats = (0..7).map { index ->
+                WindStat(
+                    directionIndex = index,
+                    frequency = if (index == 1) 60.0 else 5.71, // В сумме ~100%
+                    avgSpeed = if (index == 1) 8.5 else 3.0
+                )
+            }
+
+            // Упаковываем через твой WindAnalyzer
+            val packedWindJson = WindAnalyzer.packStats(testStats)
+
+            // 3. Создаем геометрию (точку) в районе твоей карты
+            // Подставь сюда свои дефолтные координаты, если эти далеко от твоего экрана
+            val testGeometry = arrayListOf(
+                GeoPoint(55.02, 82.55)
+            )
+
+            // 4. Собираем сущность источника
+            val testSource = SourceEntity(
+                id = 999, // Фиксированный ID для тестов, чтобы не дублировать при каждом запуске
+                expeditionId = expId,
+                type = SourceTypeEnum.POINT,
+                title = "Тестовый Завод (СВ вынос)",
+                description = "Фейковый источник для проверки импорта плана",
+                geometry = testGeometry
+            )
+
+            // Записываем в базу источник
+            db.sourceDao().insertSource(testSource)
+
+            // Записываем в базу упакованный ветер для этого источника
+            db.sourceDao().updateWindData(999, packedWindJson)
+
+            Log.d("TEST_DATA", "Тестовый источник успешно создан! ID: 999. Направление ветра зашито.")
+            Toast.makeText(this@MainActivity, "Тестовый источник создан!", Toast.LENGTH_SHORT).show()
+            mapView.invalidate()
+        }
     }
 
 }

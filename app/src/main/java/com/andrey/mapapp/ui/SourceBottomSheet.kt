@@ -22,6 +22,7 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
     var onDelete: ((Int) -> Unit)? = null
     var onSave: ((String, String) -> Unit)? = null
     var onWindRose: ((Int, Boolean) -> Unit)? = null
+    var onImportPlan: ((Int) -> Unit)? = null
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +44,7 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
         val delBtn = view.findViewById<Button>(R.id.source_delete_button)
         val windBtn = view.findViewById<Button>(R.id.source_wind_rose_button)
         val updWindBtn = view.findViewById<Button>(R.id.source_update_wind_rose_button)
+        val importPlanBtn = view.findViewById<Button>(R.id.source_import_plan_button)
 
         // hidden for now
         view.findViewById<View>(R.id.source_latitude_edit).visibility = View.GONE
@@ -51,6 +53,7 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
         // source data
 
         if (sourceId != null) {
+            importPlanBtn.visibility = View.VISIBLE
             // edit
             sourceId?.let { id ->
                 lifecycleScope.launch {
@@ -66,6 +69,7 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
             delBtn.visibility = View.GONE
             windBtn.visibility = View.GONE
             updWindBtn.visibility = View.GONE
+            importPlanBtn.visibility = View.GONE
         }
 
         saveBtn.setOnClickListener {
@@ -103,6 +107,13 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
         updWindBtn.setOnClickListener {
             sourceId?.let { id ->
                 onWindRose?.invoke(id, true)
+                dismiss()
+            }
+        }
+        // importing json with plan points
+        importPlanBtn.setOnClickListener {
+            sourceId?.let { id ->
+                onImportPlan?.invoke(id)
                 dismiss()
             }
         }

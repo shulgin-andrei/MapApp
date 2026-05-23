@@ -6,9 +6,11 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.andrey.mapapp.data.local.dao.ExpeditionDao
+import com.andrey.mapapp.data.local.dao.PlannedPointsDao
 import com.andrey.mapapp.data.local.dao.SampleDao
 import com.andrey.mapapp.data.local.dao.SourceDao
 import com.andrey.mapapp.data.local.entities.ExpeditionEntity
+import com.andrey.mapapp.data.local.entities.PlannedPointEntity
 import com.andrey.mapapp.data.local.entities.SampleEntity
 import com.andrey.mapapp.data.local.entities.SourceEntity
 
@@ -16,9 +18,10 @@ import com.andrey.mapapp.data.local.entities.SourceEntity
     entities = [
         SampleEntity::class,
         SourceEntity::class,
-        ExpeditionEntity::class
+        ExpeditionEntity::class,
+        PlannedPointEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -28,6 +31,7 @@ abstract class AppDataBase : RoomDatabase() {
     abstract fun sampleDao(): SampleDao
     abstract fun sourceDao(): SourceDao
     abstract fun expeditionDao(): ExpeditionDao
+    abstract fun plannedPointsDao(): PlannedPointsDao
 
     companion object {
         @Volatile
