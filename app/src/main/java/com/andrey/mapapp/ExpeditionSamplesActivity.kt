@@ -134,7 +134,9 @@ class ExpeditionSamplesActivity : AppCompatActivity() {
                 val properties = JSONObject()
                 properties.put("name", sample.title)
                 properties.put("description", sample.description)
-                properties.put("expeditionId", expeditionId)
+                //properties.put("expeditionId", expeditionId)
+                properties.put("samplingId", sample.samplingId)
+                properties.put("code", sample.code)
                 feature.put("properties", properties)
 
                 features.put(feature)

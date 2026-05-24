@@ -20,6 +20,7 @@ data class SampleEntity (
     @PrimaryKey(autoGenerate = true)
     val id: Int? = null,
     val expeditionId: Long,
+    val samplingId: Int,
     val lat: Double,
     val lon: Double,
     val createdAt: String,

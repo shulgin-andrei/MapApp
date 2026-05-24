@@ -78,7 +78,7 @@ class SourceBottomSheet : BottomSheetDialogFragment() {
             var isValid = true
 
             if (title.isBlank()) {
-                titleEdit.error = "Введите название точки"
+                titleEdit.error = "Введите название источника"
                 isValid = false
             }
             if (!isValid) {

@@ -6,12 +6,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -24,6 +26,10 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -40,9 +46,13 @@ fun ExpeditionDrawerContent(
     onAddClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDeleteClick: (ExpeditionEntity) -> Unit,
-    onDetailsClick: (ExpeditionEntity) -> Unit
+    onDetailsClick: (ExpeditionEntity) -> Unit,
+    onClearAllDataClick: () -> Unit
 ) {
     val arialStyle = TextStyle(fontFamily = FontFamily.SansSerif)
+    // dialog for deleting all data
+    var showDeleteWarningDialog by remember { mutableStateOf(false) }
+
     ModalDrawerSheet {
         Column(modifier = Modifier.fillMaxHeight().padding(horizontal = 12.dp)) {
             Text(
@@ -105,7 +115,26 @@ fun ExpeditionDrawerContent(
                 Icon(Icons.Default.Settings, contentDescription = null)
                 Text("Настройки", style = arialStyle, fontSize = 18.sp)
             }
+
             Spacer(modifier = Modifier.height(8.dp))
+
+            // clearing data button
+            Button(
+                onClick = { onClearAllDataClick() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF6B6B), // red
+                    contentColor = Color.White
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Icon(Icons.Default.DeleteForever, contentDescription = null)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Стереть все данные", style = arialStyle, fontSize = 18.sp)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
         }
     }
 }

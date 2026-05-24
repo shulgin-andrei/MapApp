@@ -23,7 +23,7 @@ class MarkerBottomSheet : BottomSheetDialogFragment() {
     private lateinit var db: AppDataBase
 
     // call-backs for Activity
-    var onSave: ((String, String, String, Double, Double) -> Unit)? = null
+    var onSave: ((String, String, Int, String, Double, Double) -> Unit)? = null
     var onDelete: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +46,7 @@ class MarkerBottomSheet : BottomSheetDialogFragment() {
 
         val titleEdit = view.findViewById<EditText>(R.id.title_edit)
         val descEdit = view.findViewById<EditText>(R.id.description_edit)
+        val sampIdEdit = view.findViewById<EditText>(R.id.samplingId_edit)
         val codeEdit = view.findViewById<EditText>(R.id.code_edit)
         val latEdit = view.findViewById<EditText>(R.id.latitude_edit)
         val lonEdit = view.findViewById<EditText>(R.id.longitude_edit)
@@ -62,6 +63,7 @@ class MarkerBottomSheet : BottomSheetDialogFragment() {
                 entity?.let {
                     titleEdit.setText(it.title)
                     descEdit.setText(it.description)
+                    sampIdEdit.setText(it.samplingId.toString())
                     codeEdit.setText(it.code)
                     latEdit.setText(it.lat.toString())
                     lonEdit.setText(it.lon.toString())
@@ -76,6 +78,7 @@ class MarkerBottomSheet : BottomSheetDialogFragment() {
         saveBtn.setOnClickListener {
             val title = titleEdit.text.toString()
             val desc = descEdit.text.toString()
+            val smpId = sampIdEdit.text.toString().toIntOrNull() ?: -1
             val code = codeEdit.text.toString()
             val finalLat = latEdit.text.toString().replace(',', '.').toDoubleOrNull() ?: defaultLat
             val finalLon = lonEdit.text.toString().replace(',', '.').toDoubleOrNull() ?: defaultLon
@@ -90,13 +93,17 @@ class MarkerBottomSheet : BottomSheetDialogFragment() {
                 titleEdit.error = "Введите название точки"
                 isValid = false
             }
+            if (smpId == -1) {
+                sampIdEdit.error = "Введите номер пробоотбора"
+                isValid = false
+            }
 
             if (!isValid) {
                 Toast.makeText(context, "Заполните обязательные поля корректно", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            onSave?.invoke(title, desc, code, finalLat, finalLon)
+            onSave?.invoke(title, desc, smpId, code, finalLat, finalLon)
             dismiss()
         }
 

@@ -8,12 +8,12 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.location.Location
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -126,6 +126,18 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     private lateinit var myLocationOverlay: MyLocationNewOverlay
     private lateinit var mapNorthCompassOverlay: CompassOverlay
 
+    private var targetSourceIdForImport: Int? = null
+
+    // file picker for import
+    private val pickJsonFileLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { fileUri ->
+            val sourceId = targetSourceIdForImport ?: return@registerForActivityResult
+            importPlanFromFile(sourceId, fileUri)
+        }
+    }
+
     // FOR ON CLICK IN EXPEDITION-SAMPLE ACTIVITY, GETS OK AND GOES TO SAMPLE ON MAP
     private val getSampleLocation = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
@@ -148,6 +160,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         }
     }
 
+    // MAIN
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -163,11 +176,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
         Configuration.getInstance().load(this, getPreferences(MODE_PRIVATE))
         setContentView(R.layout.activity_main)
-
+        // main form and drawer
         composeView = findViewById<ComposeView>(R.id.compose_view)
         composeSetUp()
-
-
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -176,75 +187,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         }
 
         // reset, надо будет сделать его как функцию из главного меню
-        lifecycleScope.launch {
-        db.expeditionDao().clearTableAndResetIndex()
-        db.sampleDao().clearTableAndResetIndex()
-        db.sourceDao().clearTableAndResetIndex()}
-
-
 //        lifecycleScope.launch {
-//            db.sampleDao().clearTableAndResetIndex()
-//        }
-
-        /*
-        var firstmarker: SampleEntity? = null
-        lifecycleScope.launch {
-            firstmarker = db.sampleDao().findById(id = 3)!!
-            db.sampleDao().deleteItem(firstmarker)
-        }
-        */
-
-//        val startGeoPoint =  GeoPoint(55.015, 82.9346)
-//        val _startGeoPoint =  GeoPoint(55.03, 82.9350)
-//        addMarker(startGeoPoint, "first marker", "really first", db)
-//        addMarker(_startGeoPoint, "second marker", "really second", db)
-
-//        random generation of points
-//        for (i in 0..200) {
-//            var point = GeoPoint(Random.nextDouble(60.15, 100.977), Random.nextDouble(30.15, 60.977))
-//            addMarker(point, "point + $i", "desc + $point", db)
-//        }
-
-//        lifecycleScope.launch {
-//            val sourceDao = db.sourceDao()
-//
-//            sourceDao.clearTableAndResetIndex()
-//
-//            sourceDao.insertSource(SourceEntity(
-//                type = SourceTypeEnum.POINT,
-//                title = "Точечный источник",
-//                description = "Выброс из трубы",
-//                geometry = listOf(GeoPoint(55.015, 82.934))
-//            ))
-//
-//            sourceDao.insertSource(SourceEntity(
-//                type = SourceTypeEnum.LINE,
-//                title = "Линейный источник",
-//                description = "Сток воды",
-//                geometry = listOf(
-//                    GeoPoint(55.016, 82.935),
-//                    GeoPoint(55.017, 82.937),
-//                    GeoPoint(55.018, 82.936)
-//                )
-//            ))
-//
-//            sourceDao.insertSource(
-//                SourceEntity(
-//                    type = SourceTypeEnum.AREA,
-//                    title = "Площадной источник",
-//                    description = "Полигон отходов",
-//                    geometry = listOf(
-//                        GeoPoint(55.014, 82.932),
-//                        GeoPoint(55.013, 82.933),
-//                        GeoPoint(55.012, 82.931),
-//                        GeoPoint(
-//                            55.013,
-//                            82.930
-//                        )
-//                    )
-//                )
-//            )
-//        }
+//        db.expeditionDao().clearTableAndResetIndex()
+//        db.sampleDao().clearTableAndResetIndex()
+//        db.sourceDao().clearTableAndResetIndex()}
 
 
     }
@@ -261,6 +207,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
 
             var showAddDialog by remember { mutableStateOf(false) }
+            var showDeleteWarningDialog by remember { mutableStateOf(false) }
             var newExpName by remember { mutableStateOf("") }
 
             ModalNavigationDrawer(
@@ -301,9 +248,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                             intent.putExtra("EXPEDITION_NAME", exp.name) // Для заголовка окна
                             //startActivity(intent)
                             getSampleLocation.launch(intent)
-
-                        }
-
+                        },
+                        onClearAllDataClick = { showDeleteWarningDialog = true }
                     )
                 }
             ) {
@@ -362,7 +308,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
                 }
             }
-            // add dialog pop
+            // add dialog pop for new expedition
             if (showAddDialog) {
                 AlertDialog(
                     onDismissRequest = {
@@ -424,10 +370,68 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     }
                 )
             }
+            // clearing all data
+            if (showDeleteWarningDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteWarningDialog = false },
+                    title = { Text("Удалить всё?") },
+                    text = { Text("Вы уверены, что хотите полностью очистить базу данных? Все экспедиции, точки, пробы и планы удалятся навсегда.") },
+                    confirmButton = {
+                        Button(
+                            colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFFF6B6B),
+                                contentColor = androidx.compose.ui.graphics.Color.White),
+                            onClick = {
+                                showDeleteWarningDialog = false
+                                lifecycleScope.launch {
+                                    try {
+                                        // clearing all the data
+                                        withContext(Dispatchers.IO) {
+                                            db.expeditionDao().clearTableAndResetIndex()
+                                            db.sampleDao().clearTableAndResetIndex()
+                                            db.plannedPointsDao().clearTableAndResetIndex()
+                                            db.sourceDao().clearTableAndResetIndex()
+                                        }
+
+                                        // cleaning overlays
+                                        currentDominantWindOverlay?.let { mapView.overlays.remove(it) }
+                                        currentWindOverlay?.let { mapView.overlays.remove(it) }
+                                        currentDominantWindOverlay = null
+                                        currentWindOverlay = null
+
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Все данные успешно удалены!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+
+                                        // resetting activity
+                                        this@MainActivity.recreate()
+
+                                    } catch (e: Exception) {
+                                        Log.d("CLEARING E", e.message.toString())
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Ошибка очистки: ${e.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("Да, удалить")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteWarningDialog = false }) {
+                            Text("Отмена", color = androidx.compose.ui.graphics.Color.Black)
+                        }
+                    }
+                )
+
+            }
+
         }
     }
-
-
 
     // whole default setup of mapView
     fun mapViewLoad() {
@@ -486,7 +490,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         val zoom = mapView.zoomLevelDouble
 
         prefs.edit().apply {
-            // SharedPreferences cannot save Float/Double with high effeciancy directly
+            // SharedPreferences cannot save Float/Double with high efficiancy directly
             // so we parsing it to string
             putString(KEY_LAT, center.latitude.toString())
             putString(KEY_LON, center.longitude.toString())
@@ -515,31 +519,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             mapView.controller.setZoom(10.0)
         }
     }
-//    private fun configureCompassProvider() {
-//        if (!::mapNorthCompassOverlay.isInitialized) return
-//
-//        if (settings.isCompassDeviceModeEnabled()) {
-//            // Режим НАВИГАЦИИ: принудительно задаем провайдер датчиков устройства (если вдруг сбрасывали)
-//            val deviceProvider = org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider(this)
-//            mapNorthCompassOverlay.setOrientationProvider(deviceProvider)
-//            mapNorthCompassOverlay.enableCompass() // Стартуем опрос датчиков
-//        } else {
-//            // Режим КАРТЫ (Север): просто вырубаем опрос датчиков устройства!
-//            // Провайдер при этом внутри библиотеки сбрасывать в null не нужно
-//            mapNorthCompassOverlay.disableCompass()
-//
-//            // Вручную сбрасываем азимут в 0, чтобы стрелка смотрела строго на север карты
-//            // (так как drawCompass будет рисовать статичную стрелку)
-//            try {
-//                val field = CompassOverlay::class.java.getDeclaredField("mAzimuth")
-//                field.isAccessible = true
-//                field.setFloat(mapNorthCompassOverlay, 0f)
-//            } catch (e: Exception) {
-//                // Если по какой-то причине рефлексия не сработает, приложение хотя бы не упадет
-//                e.printStackTrace()
-//            }
-//        }
-//    }
 
     // loading all of data from db and making markers out of it
     fun loadDataFromDB(db: AppDataBase, repository: ExpeditionRepository) {
@@ -584,15 +563,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 if (expId == null) {
                     flowOf(emptyList())
                 } else {
-                    // Тянем ВСЕ плановые точки для источников текущей экспедиции.
-                    // Для простоты вытащим через Flow (замени запрос в DAO на выборку по expeditionId,
-                    // либо, если делаем проще, выгребаем вообще все плановые точки, которые есть в базе)
                     db.plannedPointsDao().getPointsByExpedition(expId)
-                    // Примечание: Чтобы не усложнять, давай в DAO сделаем метод getAllPlannedPoints()
-                    // и будем отображать их. Вот вариант со сбором всех точек:
                 }
             }.collect { plannedPoints ->
-                // Очищаем старые маркеры плановых точек
                 val plannedToRemove = mapView.overlays.filter { overlay ->
                     (overlay as? Marker)?.relatedObject.let { obj ->
                         obj is MarkerData && obj.type == MarkerType.PLANNED
@@ -600,7 +573,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 }
                 mapView.overlays.removeAll(plannedToRemove)
 
-                // Рисуем новые плановые маркеры
                 plannedPoints.forEach { entity ->
                     val marker = Marker(mapView).apply {
                         position = GeoPoint(entity.latitude, entity.longitude)
@@ -608,14 +580,12 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                         snippet = "Вес замера: ${(entity.weight * 100).toInt()}%"
                         relatedObject = MarkerData(entity.id, MarkerType.PLANNED)
 
-                        // Ставим оранжевый маркер с прозрачностью (чтобы отличался от реальных проб)
-                        icon = getDrawable(R.drawable.blue_circle_icon) // Твоя иконка для плановых точек
+                        icon = getDrawable(R.drawable.orange_circle_icon)
                         alpha = 0.6f
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
 
                         setOnMarkerClickListener { m, _ ->
-                            // При клике на плановую точку — сразу открываем шторку создания РЕАЛЬНОГО маркера пробы,
-                            // передавая туда координаты этой плановой точки!
+                            // making a sample out of the planned point
                             openMarkerSheet(null, m.position, db)
                             true
                         }
@@ -714,11 +684,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
     }
 
-
-    // this thing is keeping save value if parse to double failed
-    fun EditText.toDoubleOrDefault(default: Double): Double {
-        return this.text.toString().replace(',', '.').toDoubleOrNull() ?: default
-    }
     // fun for calculating points based on distance from source
     private fun calculateTargetPoint(center: GeoPoint, distance: Double, bearing: Double): GeoPoint {
         val earthRadius = 6371000.0 // Радиус Земли в метрах
@@ -741,6 +706,80 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
         // Возвращаем готовый GeoPoint в градусах
         return GeoPoint(Math.toDegrees(lat2Rad), Math.toDegrees(lon2Rad))
+    }
+    // import
+    private fun importPlanFromFile(sourceId: Int, uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Читаем содержимое файла через ContentResolver
+                val inputStream = contentResolver.openInputStream(uri)
+                val jsonString = inputStream?.bufferedReader().use { it?.readText() } ?: ""
+
+                if (jsonString.isBlank()) return@launch
+
+                // Дальше идет твой готовый рабочий код парсинга:
+                val source = db.sourceDao().findById(sourceId)
+                if (source != null && source.windDataJson != null) {
+
+                    val center = GeoPoint(
+                        source.geometry.map { p -> p.latitude }.average(),
+                        source.geometry.map { p -> p.longitude }.average()
+                    )
+
+                    val stats = WindAnalyzer.unpackStats(source.windDataJson)
+                    val maxSector = stats.maxByOrNull { it.frequency } ?: return@launch
+                    val bearing = ((maxSector.directionIndex * 45) + 180) % 360.0
+
+                    val jsonObject = org.json.JSONObject(jsonString)
+                    val pointsArray = jsonObject.getJSONObject("observationPlan").getJSONArray("points")
+
+                    val pointsToSave = ArrayList<PlannedPointEntity>()
+
+                    for (i in 0 until pointsArray.length()) {
+                        val p = pointsArray.getJSONObject(i)
+                        val distance = p.getDouble("distance")
+                        val weight = p.getDouble("weight")
+
+                        // Учитываем crosswindOffset, если он есть в JSON, иначе берем 0.0
+                        val crosswind = p.optDouble("crosswindOffset", 0.0)
+
+                        // Считаем базовую точку на оси
+                        var targetPoint = calculateTargetPoint(center, distance, bearing)
+
+                        // Если вдруг смещение вбок не нулевое, сдвигаем перпендикулярно
+                        if (crosswind != 0.0) {
+                            targetPoint = calculateTargetPoint(targetPoint, crosswind, (bearing + 90) % 360.0)
+                        }
+
+                        pointsToSave.add(
+                            PlannedPointEntity(
+                                sourceId = sourceId,
+                                latitude = targetPoint.latitude,
+                                longitude = targetPoint.longitude,
+                                distance = distance,
+                                weight = weight,
+                                isVisited = false
+                            )
+                        )
+                    }
+
+                    db.plannedPointsDao().deleteBySourceId(sourceId)
+                    db.plannedPointsDao().insertPoints(pointsToSave)
+
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "План успешно импортирован из файла!", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Сначала рассчитайте розу ветров!", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Ошибка чтения файла: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
     // time for sample entity
     fun getCurrentTime(): String {
@@ -766,17 +805,21 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         val relatedObject = marker?.relatedObject as? MarkerData
         val id: Int? = relatedObject?.id
         val pos = marker?.position ?: point ?: return
+        // checking if it is planned point
+        val isPlannedPointClick = relatedObject?.type == MarkerType.PLANNED
+        val sampleId = if(isPlannedPointClick) null else id
 
         val sheet = MarkerBottomSheet.newInstance(id, pos.latitude, pos.longitude)
 
         // save button
-        sheet.onSave = { title, desc, code, newLat, newLon ->
+        sheet.onSave = { title, desc, smpId, code, newLat, newLon ->
             lifecycleScope.launch {
                 val expId = expRep.getOrCreateActiveId()
                 Log.d("DB_CHECK", "Attempting to insert sample with ExpID: $expId")
                 val entity = SampleEntity(
                     id = id ?: null,
                     expeditionId = expId,
+                    samplingId = smpId,
                     lat = newLat,
                     lon = newLon,
                     title = title,
@@ -785,12 +828,22 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     createdAt = getCurrentTime()
                 )
                 db.sampleDao().insertItem(entity)
+                // if it was planned point - turning it of on map
+                if (isPlannedPointClick && id != null) {
+                    db.plannedPointsDao().markAsVisited(id)
+                    Log.d("DB_CHECK", "Плановая точка ID: $id успешно отмечена как посещенная")
+                }
             }
         }
 
         // delete button
         sheet.onDelete = {
-            id?.let { lifecycleScope.launch { db.sampleDao().deleteById(it) } }
+            if (!isPlannedPointClick) {
+                id?.let { lifecycleScope.launch { db.sampleDao().deleteById(it) } }
+            }
+            else {
+                Toast.makeText(this, "Вы не можете удалить невзятую пробу", Toast.LENGTH_SHORT).show()
+            }
         }
         sheet.show(supportFragmentManager, "MarkerSheet")
     }
@@ -900,78 +953,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 Toast.makeText(this@MainActivity, "Источник удален", Toast.LENGTH_SHORT).show()
             }
         }
-        sheet.onImportPlan = {
-                sourceId ->
-            lifecycleScope.launch {
-                val source = db.sourceDao().findById(sourceId)
-                if (source != null && source.windDataJson != null) {
-
-                    // 1. Берем центр источника
-                    val center = GeoPoint(
-                        source.geometry.map { p -> p.latitude }.average(),
-                        source.geometry.map { p -> p.longitude }.average()
-                    )
-
-                    // 2. Получаем угол главного выноса из ветра
-                    val stats = WindAnalyzer.unpackStats(source.windDataJson)
-                    // Ищем сектор с максимальной частотой
-                    val maxSector = stats.maxByOrNull { it.frequency } ?: return@launch
-                    // по направлению куда летит
-                    val bearing = ((maxSector.directionIndex * 45) + 180) % 360.0
-
-                    // 3. Наш JSON (захардкоженный тестовый вариант из твоего примера)
-                    val jsonString = """{
-              "observationPlan": {
-                "points": [
-                  { "distance": 60, "weight": 0.5 },
-                  { "distance": 180, "weight": 0.5 }
-                ]
-              }
-            }"""
-
-                    // 4. Простейший парсинг через JSONObject (чтобы не плотить DTO классы)
-                    val jsonObject = org.json.JSONObject(jsonString)
-                    val pointsArray =
-                        jsonObject.getJSONObject("observationPlan").getJSONArray("points")
-
-                    val pointsToSave = ArrayList<PlannedPointEntity>()
-
-                    for (i in 0 until pointsArray.length()) {
-                        val p = pointsArray.getJSONObject(i)
-                        val distance = p.getDouble("distance")
-                        val weight = p.getDouble("weight")
-
-                        // Вычисляем GPS координаты точки (Прямая геодезическая задача)
-                        val targetPoint = calculateTargetPoint(center, distance, bearing)
-
-                        pointsToSave.add(
-                            PlannedPointEntity(
-                                sourceId = sourceId,
-                                latitude = targetPoint.latitude,
-                                longitude = targetPoint.longitude,
-                                distance = distance,
-                                weight = weight
-                            )
-                        )
-                    }
-
-                    // 5. Чистим старый план этого источника и пишем новый
-                    db.plannedPointsDao().deleteBySourceId(sourceId)
-                    db.plannedPointsDao().insertPoints(pointsToSave)
-
-                    Toast.makeText(
-                        this@MainActivity,
-                        "План точек импортирован!",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Сначала рассчитайте розу ветров!",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
+        sheet.onImportPlan = { sourceId ->
+            targetSourceIdForImport = sourceId
+            // Открываем проводник, фильтруя только JSON файлы (или любые текстовые)
+            pickJsonFileLauncher.launch("application/json")
         }
         sheet.show(supportFragmentManager, "SourceSheet")
     }
@@ -1184,7 +1169,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             return true
         }
         clearWindRose()
-        createTestSourceWithWind(db)
+        //createTestSourceWithWind(db)
         //testWindApi()
         return false
     }
@@ -1213,45 +1198,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         return true
     }
 
-    private fun testWindApi() {
-        lifecycleScope.launch {
-            try {
-                // Делаем запрос (координаты из твоего примера)
-                val response = RetrofitClient.apiService.getHistoryWeather(
-                    lat = 55.015,
-                    lon = 82.934,
-                    startDate = "2025-01-01",
-                    endDate = "2025-01-05" // Возьмем пару дней для теста
-                )
-
-
-                // Если данные пришли, выведем в логи первые 5 записей
-                val directions = response.hourly.windDirections
-                val speeds = response.hourly.windSpeeds
-
-                Log.d("WIND_TEST", "Данные получены! Всего записей: ${directions.size}")
-
-                for (i in 0 until 5) {
-                    Log.d("WIND_TEST", "Час $i: Направление=${directions[i]}°, Скорость=${speeds[i]} км/ч")
-                }
-
-                // А теперь прогоним через наш анализатор (если ты его уже создал)
-                val analyzer = WindAnalyzer()
-                val stats = analyzer.process(response)
-
-                val windRoseOverlay = WindRoseOverlay(GeoPoint(55.015, 82.934),stats)
-                mapView.overlays.add(windRoseOverlay)
-                mapView.invalidate()
-                stats.forEach { stat ->
-                    Log.d("WIND_TEST", "Сектор ${stat.directionIndex}: Частота ${String.format("%.1f", stat.frequency)}%, Ср.скорость ${String.format("%.1f", stat.avgSpeed)}")
-                }
-
-            } catch (e: Exception) {
-                Log.e("WIND_TEST", "Ошибка при запросе: ${e.message}")
-                e.printStackTrace()
-            }
-        }
-    }
 
     // wind rose stuff ============================================================================
     private fun showWindRose(center: GeoPoint, stats: List<WindStat>) {
@@ -1331,50 +1277,4 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 //            mapView.invalidate()
 //        }
     }
-    private fun createTestSourceWithWind(db: AppDataBase) {
-        lifecycleScope.launch {
-            // 1. Получаем ID активной экспедиции
-            val expId = expRep.getOrCreateActiveId()
-
-            // 2. Генерируем фейковую статистику ветра (8 секторов)
-            // Сделаем так, чтобы сектор №1 (Северо-Восток, 45°) имел максимальную частоту (60%)
-            val testStats = (0..7).map { index ->
-                WindStat(
-                    directionIndex = index,
-                    frequency = if (index == 1) 60.0 else 5.71, // В сумме ~100%
-                    avgSpeed = if (index == 1) 8.5 else 3.0
-                )
-            }
-
-            // Упаковываем через твой WindAnalyzer
-            val packedWindJson = WindAnalyzer.packStats(testStats)
-
-            // 3. Создаем геометрию (точку) в районе твоей карты
-            // Подставь сюда свои дефолтные координаты, если эти далеко от твоего экрана
-            val testGeometry = arrayListOf(
-                GeoPoint(55.02, 82.55)
-            )
-
-            // 4. Собираем сущность источника
-            val testSource = SourceEntity(
-                id = 999, // Фиксированный ID для тестов, чтобы не дублировать при каждом запуске
-                expeditionId = expId,
-                type = SourceTypeEnum.POINT,
-                title = "Тестовый Завод (СВ вынос)",
-                description = "Фейковый источник для проверки импорта плана",
-                geometry = testGeometry
-            )
-
-            // Записываем в базу источник
-            db.sourceDao().insertSource(testSource)
-
-            // Записываем в базу упакованный ветер для этого источника
-            db.sourceDao().updateWindData(999, packedWindJson)
-
-            Log.d("TEST_DATA", "Тестовый источник успешно создан! ID: 999. Направление ветра зашито.")
-            Toast.makeText(this@MainActivity, "Тестовый источник создан!", Toast.LENGTH_SHORT).show()
-            mapView.invalidate()
-        }
-    }
-
 }
