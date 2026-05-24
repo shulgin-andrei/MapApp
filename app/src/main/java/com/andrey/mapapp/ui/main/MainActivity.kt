@@ -1,4 +1,4 @@
-package com.andrey.mapapp
+package com.andrey.mapapp.ui.main
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -54,7 +54,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import com.andrey.mapapp.ui.ExpeditionSamplesActivity
+import com.andrey.mapapp.R
 import com.andrey.mapapp.data.local.AppDataBase
+import com.andrey.mapapp.data.local.AppSettings
 import com.andrey.mapapp.data.local.ExpeditionRepository
 import com.andrey.mapapp.data.local.MarkerData
 import com.andrey.mapapp.data.local.entities.ExpeditionEntity
@@ -64,9 +67,9 @@ import com.andrey.mapapp.data.local.entities.SourceEntity
 import com.andrey.mapapp.data.local.enums.MarkerType
 import com.andrey.mapapp.data.local.enums.SourceTypeEnum
 import com.andrey.mapapp.data.network.RetrofitClient
-import com.andrey.mapapp.ui.ExpeditionDrawerContent
-import com.andrey.mapapp.ui.MarkerBottomSheet
-import com.andrey.mapapp.ui.SourceBottomSheet
+import com.andrey.mapapp.ui.bottom_sheets.MarkerBottomSheet
+import com.andrey.mapapp.ui.bottom_sheets.SourceBottomSheet
+import com.andrey.mapapp.ui.settings.SettingsActivity
 import com.andrey.mapapp.utils.DominantWindOverlay
 import com.andrey.mapapp.utils.WindAnalyzer
 import com.andrey.mapapp.utils.WindRoseOverlay
@@ -78,6 +81,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -92,11 +96,16 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.ScaleBarOverlay
 import org.osmdroid.views.overlay.compass.CompassOverlay
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.time.Instant
 import java.time.ZoneId.systemDefault
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import kotlin.math.asin
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 
 private const val PREFS_NAME = "map_prefs"
 private const val KEY_LAT = "last_lat"
@@ -695,13 +704,13 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         val distRatio = distance / earthRadius
 
         // Считаем новые широту и долготу в радианах
-        val lat2Rad = kotlin.math.asin(
-            kotlin.math.sin(lat1) * kotlin.math.cos(distRatio) +
-                    kotlin.math.cos(lat1) * kotlin.math.sin(distRatio) * kotlin.math.cos(bearingRad)
+        val lat2Rad = asin(
+            sin(lat1) * cos(distRatio) +
+                    cos(lat1) * sin(distRatio) * cos(bearingRad)
         )
-        val lon2Rad = lon1 + kotlin.math.atan2(
-            kotlin.math.sin(bearingRad) * kotlin.math.sin(distRatio) * kotlin.math.cos(lat1),
-            kotlin.math.cos(distRatio) - kotlin.math.sin(lat1) * kotlin.math.sin(lat2Rad)
+        val lon2Rad = lon1 + atan2(
+            sin(bearingRad) * sin(distRatio) * cos(lat1),
+            cos(distRatio) - sin(lat1) * sin(lat2Rad)
         )
 
         // Возвращаем готовый GeoPoint в градусах
@@ -730,7 +739,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     val maxSector = stats.maxByOrNull { it.frequency } ?: return@launch
                     val bearing = ((maxSector.directionIndex * 45) + 180) % 360.0
 
-                    val jsonObject = org.json.JSONObject(jsonString)
+                    val jsonObject = JSONObject(jsonString)
                     val pointsArray = jsonObject.getJSONObject("observationPlan").getJSONArray("points")
 
                     val pointsToSave = ArrayList<PlannedPointEntity>()
@@ -1134,7 +1143,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
         // activating overlay
         if (!::myLocationOverlay.isInitialized) {
-            val provider = org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider(this)
+            val provider = GpsMyLocationProvider(this)
             myLocationOverlay = MyLocationNewOverlay(provider, mapView).apply {
                 setDrawAccuracyEnabled(true)
             }

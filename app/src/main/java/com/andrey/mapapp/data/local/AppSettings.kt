@@ -1,4 +1,4 @@
-package com.andrey.mapapp
+package com.andrey.mapapp.data.local
 
 import android.content.Context
 

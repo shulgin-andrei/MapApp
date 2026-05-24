@@ -22,13 +22,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MapApp">
         <activity
-            android:name=".SettingsActivity"
+            android:name=".ui.settings.SettingsActivity"
             android:exported="false" />
         <activity
-            android:name=".ExpeditionSamplesActivity"
+            android:name=".ui.ExpeditionSamplesActivity"
             android:exported="false" />
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.main.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

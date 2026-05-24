@@ -1,4 +1,4 @@
-package com.andrey.mapapp.ui
+package com.andrey.mapapp.ui.main
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer

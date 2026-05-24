@@ -1,4 +1,4 @@
-package com.andrey.mapapp
+package com.andrey.mapapp.ui
 
 import android.content.Intent
 import android.os.Bundle
@@ -35,12 +35,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.coroutineScope
 import com.andrey.mapapp.data.local.AppDataBase
 import com.andrey.mapapp.data.local.entities.SampleEntity
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 class ExpeditionSamplesActivity : AppCompatActivity() {
 
@@ -153,10 +155,10 @@ class ExpeditionSamplesActivity : AppCompatActivity() {
     }
 
     private fun shareFile(content: String, fileName: String) {
-        val file = java.io.File(cacheDir, fileName)
+        val file = File(cacheDir, fileName)
         file.writeText(content)
 
-        val uri = androidx.core.content.FileProvider.getUriForFile(
+        val uri = FileProvider.getUriForFile(
             this,
             "${packageName}.fileprovider", // Убедись, что это совпадает с манифестом
             file

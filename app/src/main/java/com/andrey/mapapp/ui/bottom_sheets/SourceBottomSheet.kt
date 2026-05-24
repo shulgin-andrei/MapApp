@@ -1,4 +1,4 @@
-package com.andrey.mapapp.ui
+package com.andrey.mapapp.ui.bottom_sheets
 
 import android.os.Bundle
 import android.view.LayoutInflater

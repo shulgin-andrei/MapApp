@@ -1,4 +1,4 @@
-package com.andrey.mapapp
+package com.andrey.mapapp.ui.settings
 
 import android.os.Bundle
 import androidx.activity.compose.setContent
@@ -35,6 +35,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.andrey.mapapp.data.local.AppSettings
 
 class SettingsActivity : AppCompatActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -42,7 +43,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         val settings = AppSettings(this)
-        val arialStyle = TextStyle(fontFamily = FontFamily.SansSerif)
+        val arialStyle = TextStyle(fontFamily = FontFamily.Companion.SansSerif)
 
         setContent {
             val periods = listOf(1, 3, 6, 8, 12, 18, 24)
@@ -61,39 +62,38 @@ class SettingsActivity : AppCompatActivity() {
                 }
             ) { padding ->
                 // labels for first setting
-                Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+                Column(modifier = Modifier.Companion.padding(padding).padding(16.dp)) {
                     Text(
                         text = "Расчёт ветра",
                         style = arialStyle,
                         fontSize = 20.sp,
-                        color = Color.Black
+                        color = Color.Companion.Black
                     )
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.Companion.height(18.dp))
                     Text(
                         text = "Период анализа ветра",
                         style = arialStyle,
-                        color = Color.Black,
+                        color = Color.Companion.Black,
                         fontSize = 18.sp
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.Companion.height(8.dp))
                     Text(
                         text = "За какой период собирать данные для розы ветров:",
                         style = arialStyle,
                         fontSize = 16.sp,
-                        color = Color.Gray
+                        color = Color.Companion.Gray
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.Companion.height(16.dp))
 
                     // 1 for dropdown menu ================================================
                     var isExpanded by remember { mutableStateOf(false) }
 
                     // text format
-                    fun getPeriodText(months: Int) = when(months) {
+                    fun getPeriodText(months: Int) = when (months) {
                         1 -> "1 месяц"
                         in 2..4, 24 -> "$months месяца"
                         else -> "$months месяцев"
                     }
-
 
 
                     // список выпадающий Material 3)
@@ -110,11 +110,11 @@ class SettingsActivity : AppCompatActivity() {
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isExpanded) },
                             colors = ExposedDropdownMenuDefaults.textFieldColors(),
                             textStyle = TextStyle(
-                                fontFamily = FontFamily.SansSerif,
-                                color = Color.Black,
+                                fontFamily = FontFamily.Companion.SansSerif,
+                                color = Color.Companion.Black,
                                 fontSize = 18.sp
                             ),
-                            modifier = Modifier
+                            modifier = Modifier.Companion
                                 .fillMaxWidth()
                                 .menuAnchor() // КРИТИЧНО ДЛЯ MATERIAL 3: привязывает меню к полю
                         )
@@ -126,10 +126,13 @@ class SettingsActivity : AppCompatActivity() {
                         ) {
                             periods.forEach { months ->
                                 DropdownMenuItem(
-                                    text = { Text(text = getPeriodText(months),
-                                        style = arialStyle,
-                                        fontSize = 18.sp
-                                    ) },
+                                    text = {
+                                        Text(
+                                            text = getPeriodText(months),
+                                            style = arialStyle,
+                                            fontSize = 18.sp
+                                        )
+                                    },
                                     onClick = {
                                         selectedPeriod = months
                                         settings.saveWindPeriod(months) // saving in SharedPreferences
@@ -141,9 +144,9 @@ class SettingsActivity : AppCompatActivity() {
                         }
                     }
                     // ===========================================================================
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.Companion.height(24.dp))
                     HorizontalDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.Companion.height(16.dp))
 
                     // ===========================================================================
 
@@ -152,15 +155,15 @@ class SettingsActivity : AppCompatActivity() {
                         text = "Визуализация ветра",
                         style = arialStyle,
                         fontSize = 20.sp,
-                        color = Color.Black
+                        color = Color.Companion.Black
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.Companion.height(8.dp))
 
                     // switch state
                     var showFullRose by remember { mutableStateOf(settings.isFullRoseEnabled()) }
 
                     Row(
-                        modifier = Modifier
+                        modifier = Modifier.Companion
                             .fillMaxWidth()
                             .toggleable( // делает кликабельной всю строку, а не только сам переключатель
                                 value = showFullRose,
@@ -170,19 +173,19 @@ class SettingsActivity : AppCompatActivity() {
                                 }
                             )
                             .padding(vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Companion.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.Companion.weight(1f)) {
                             Text(
                                 text = "Полная роза ветров",
                                 fontSize = 18.sp,
-                                color = Color.Black
+                                color = Color.Companion.Black
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.Companion.height(8.dp))
                             Text(
                                 text = if (showFullRose) "Отображается полная роза частот" else "Отображается только вектор главного выноса (стрелка)",
                                 fontSize = 16.sp,
-                                color = Color.Gray
+                                color = Color.Companion.Gray
                             )
                         }
 
@@ -196,9 +199,9 @@ class SettingsActivity : AppCompatActivity() {
                         )
                     }
                     // ===========================================================================
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.Companion.height(24.dp))
                     HorizontalDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.Companion.height(16.dp))
 
                     // compass display mode switch ===============================================
                     // either to north, either to device internal thing
