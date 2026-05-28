@@ -23,6 +23,6 @@ data class PlannedPointEntity(
     val latitude: Double,
     val longitude: Double,
     val distance: Double,
-    val weight: Double,
+    val weight: Double, // убрать
     val isVisited: Boolean = false
 )

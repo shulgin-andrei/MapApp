@@ -1,18 +1,11 @@
 package com.andrey.mapapp.ui.main
 
-import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Canvas
-import android.graphics.Color
-import android.location.Location
-import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -50,38 +43,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
-import com.andrey.mapapp.ui.ExpeditionSamplesActivity
 import com.andrey.mapapp.R
 import com.andrey.mapapp.data.local.AppDataBase
 import com.andrey.mapapp.data.local.AppSettings
 import com.andrey.mapapp.data.local.ExpeditionRepository
 import com.andrey.mapapp.data.local.MarkerData
 import com.andrey.mapapp.data.local.entities.ExpeditionEntity
-import com.andrey.mapapp.data.local.entities.PlannedPointEntity
 import com.andrey.mapapp.data.local.entities.SampleEntity
 import com.andrey.mapapp.data.local.entities.SourceEntity
 import com.andrey.mapapp.data.local.enums.MarkerType
 import com.andrey.mapapp.data.local.enums.SourceTypeEnum
 import com.andrey.mapapp.data.network.RetrofitClient
+import com.andrey.mapapp.ui.ExpeditionSamplesActivity
 import com.andrey.mapapp.ui.bottom_sheets.MarkerBottomSheet
 import com.andrey.mapapp.ui.bottom_sheets.SourceBottomSheet
 import com.andrey.mapapp.ui.settings.SettingsActivity
-import com.andrey.mapapp.utils.DominantWindOverlay
-import com.andrey.mapapp.utils.WindAnalyzer
-import com.andrey.mapapp.utils.WindRoseOverlay
-import com.andrey.mapapp.utils.WindStat
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import com.andrey.mapapp.utils.PlanImporter
+import com.andrey.mapapp.utils.wind.DominantWindOverlay
+import com.andrey.mapapp.utils.wind.WindAnalyzer
+import com.andrey.mapapp.utils.wind.WindRoseOverlay
+import com.andrey.mapapp.utils.wind.WindStat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -90,22 +79,15 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.Projection
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.ScaleBarOverlay
 import org.osmdroid.views.overlay.compass.CompassOverlay
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.time.Instant
 import java.time.ZoneId.systemDefault
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import kotlin.math.asin
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
 
 private const val PREFS_NAME = "map_prefs"
 private const val KEY_LAT = "last_lat"
@@ -124,16 +106,13 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     private lateinit var expRep: ExpeditionRepository // the thing, that's keeping track of last created expedition and of instance of rep itself
     private lateinit var db: AppDataBase    // database
 
-
-    // variables for drawing sources
-    private var isDrawingMode = false // boolean for checking the mode of drawing
-    private var currentDrawingType: SourceTypeEnum? = null
-    private val tempPoints = mutableListOf<GeoPoint>() // all the points created in process of drawing the source
-    private var previewOverlay: Overlay? = null // for demo drawing preview, sets over mapView like an overlay
     private var currentWindOverlay: WindRoseOverlay? = null
     private var currentDominantWindOverlay: DominantWindOverlay? = null
-    private lateinit var myLocationOverlay: MyLocationNewOverlay
     private lateinit var mapNorthCompassOverlay: CompassOverlay
+    // delegated helpers
+    private lateinit var markerFactory: MapMarkerFactory
+    private lateinit var drawingManager: SourceDrawingManager
+    private lateinit var  locationHelper: MapLocationHelper
 
     private var targetSourceIdForImport: Int? = null
 
@@ -143,7 +122,11 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     ) { uri: Uri? ->
         uri?.let { fileUri ->
             val sourceId = targetSourceIdForImport ?: return@registerForActivityResult
-            importPlanFromFile(sourceId, fileUri)
+            lifecycleScope.launch {
+                PlanImporter.importPlan(contentResolver, db, sourceId, fileUri)
+                    .onSuccess { Toast.makeText(this@MainActivity, "План успешно импортирован!", Toast.LENGTH_SHORT).show() }
+                    .onFailure { e -> Toast.makeText(this@MainActivity, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show() }
+            }
         }
     }
 
@@ -163,10 +146,19 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 if (lat != 0.0 && lon != 0.0) {
                     val targetPoint = GeoPoint(lat, lon)
                     mapView.controller.animateTo(targetPoint)
-                    mapView.controller.setZoom(18.0) // Приближаем, чтобы увидеть точку
+                    mapView.controller.setZoom(18.0)
                 }
             }
         }
+    }
+    private fun initHelpers() {
+        markerFactory = MapMarkerFactory(this, mapView)
+
+        drawingManager = SourceDrawingManager(mapView, drawingControls) { finalType, points ->
+            // callback triggers when drawing is finished, so we only have to open the sheet
+            openSourceSheet(id = null, db = db, drawnGeometry = points, drawnType = finalType)
+        }
+
     }
 
     // MAIN
@@ -174,6 +166,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        locationHelper = MapLocationHelper(this){ geoPoint ->
+            // Коллбек срабатывает, когда была успешно поймана точка по GPS для замера пробы
+            openMarkerSheet(null, geoPoint, db)
+        }
         settings = AppSettings(this)
         currentPeriod = settings.getWindPeriod()
 
@@ -189,19 +185,12 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         composeView = findViewById<ComposeView>(R.id.compose_view)
         composeSetUp()
 
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-
-        // reset, надо будет сделать его как функцию из главного меню
-//        lifecycleScope.launch {
-//        db.expeditionDao().clearTableAndResetIndex()
-//        db.sampleDao().clearTableAndResetIndex()
-//        db.sourceDao().clearTableAndResetIndex()}
-
-
     }
 
     // WHOLE LEFT SIDE DRAWER UI SET UP ============================================================
@@ -267,11 +256,13 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     modifier = Modifier.fillMaxSize(),
                     factory = { _ ->
                         // making it a root layout
-                        val root = layoutInflater.inflate(R.layout.activity_main, null)
+                        val root = layoutInflater.inflate(R.layout.layout_map_content, null)
 
                         // main xml
                         mapView = root.findViewById(R.id.map_view)
                         drawingControls = root.findViewById(R.id.drawing_controls)
+                        // only after mapView initializing we can finally do this stuff
+                        locationHelper.attachMapView(mapView)
                         val buttonFinish = root.findViewById<Button>(R.id.button_finish_drawing)
                         val buttonCancel = root.findViewById<Button>(R.id.button_cancel_drawing)
                         buttonFinish.setOnClickListener {
@@ -283,7 +274,9 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
                         mapViewLoad()
                         restoreMapState()
+                        initHelpers()
                         loadDataFromDB(db, expRep)
+
 
                         root
                     }
@@ -301,7 +294,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                     //pgs
                     SmallFloatingActionButton(
                         onClick = {
-                            checkLocationPermissionAndEnableGps()
+                            locationHelper.checkLocationPermissionAndEnableGps()
                         },
                         containerColor = androidx.compose.ui.graphics.Color(0xFF90EE90), // Твой зеленый цвет
                         contentColor = androidx.compose.ui.graphics.Color.Black,
@@ -456,12 +449,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         val dm: DisplayMetrics = resources.displayMetrics
         val screenWidth = dm.widthPixels / dm.density // pure dp
         val screenHeight = dm.heightPixels / dm.density
-        // compass with internal thing means the compass of DEVICE
-        // usable in case of navigating to point
-//        val compassOverlay = CompassOverlay(this,
-//            InternalCompassOrientationProvider(this), mapView)
-//        compassOverlay.enableCompass()
-
         // this just determines location of NORTH relatively to rotation of map
         mapNorthCompassOverlay = object: CompassOverlay(this, mapView) {
             override fun draw(c: Canvas?, pProjection: Projection?) {
@@ -487,9 +474,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         mapView.controller.setZoom(20.0)
         val startGeoPoint =  GeoPoint(55.015, 82.9346)
 
-        mapView.getOverlays().add(0, mapEventsOverlay)
-
-        mapView.controller.setZoom(20.0)
         mapView.controller.setCenter(startGeoPoint)
 
     }
@@ -549,24 +533,14 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
                 // drawing sample markers at the mapView
                 samples.forEach { entity ->
-                    val marker = Marker(mapView).apply {
-                        position = GeoPoint(entity.lat, entity.lon)
-                        title = entity.title
-                        relatedObject = MarkerData(entity.id, MarkerType.SAMPLE)
-                        icon = getDrawable(R.drawable.blue_circle_icon)
-                        alpha = 0.85f
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        setOnMarkerClickListener { m, _ ->
-                            openMarkerSheet(m, null, db)
-                            true
-                        }
-                    }
+                    val marker = markerFactory.createSampleMarker(entity) { m -> openMarkerSheet(m, null, db) }
                     mapView.overlays.add(marker)
                 }
                 mapView.invalidate()
             }
 
         }
+        // planned points
         lifecycleScope.launch {
             repository.currentExpeditionId.flatMapLatest { expId ->
                 if (expId == null) {
@@ -583,22 +557,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 mapView.overlays.removeAll(plannedToRemove)
 
                 plannedPoints.forEach { entity ->
-                    val marker = Marker(mapView).apply {
-                        position = GeoPoint(entity.latitude, entity.longitude)
-                        title = "Рекомендуемая проба: ${entity.distance}м"
-                        snippet = "Вес замера: ${(entity.weight * 100).toInt()}%"
-                        relatedObject = MarkerData(entity.id, MarkerType.PLANNED)
-
-                        icon = getDrawable(R.drawable.orange_circle_icon)
-                        alpha = 0.6f
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-
-                        setOnMarkerClickListener { m, _ ->
-                            // making a sample out of the planned point
-                            openMarkerSheet(null, m.position, db)
-                            true
-                        }
-                    }
+                    val marker = markerFactory.createPlannedMarker(entity) { m -> openMarkerSheet(null, m.position, db) }
                     mapView.overlays.add(marker)
                 }
                 mapView.invalidate()
@@ -626,65 +585,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
                 // drawing all of the sources at mapView
                 sources.forEach { source ->
-                    when (source.type) {
-                        SourceTypeEnum.POINT -> {
-                            val marker = Marker(mapView).apply {
-                                position = source.geometry.first()
-                                title = source.title
-                                snippet = source.description
-                                relatedObject = MarkerData(source.id, MarkerType.SOURCE)
-                                icon = getDrawable(R.drawable.red_circle_icon)
-                                alpha = 0.75f
-                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                setOnMarkerClickListener { m, _ ->
-                                    val data = m.relatedObject as? MarkerData
-                                    data?.let { openSourceSheet(it.id!!, db) }
-                                    true
-                                }
-                            }
-                            mapView.overlays.add(marker)
-                        }
-
-                        SourceTypeEnum.LINE -> {
-                            val line = Polyline(mapView)
-                            line.setPoints(source.geometry)
-                            line.title = source.title
-                            line.relatedObject = MarkerData(source.id, MarkerType.SOURCE)
-                            line.setOnClickListener { p, _, _ ->
-                                val data = line.relatedObject as? MarkerData
-                                data?.let { openSourceSheet(it.id!!, db) }
-                                true
-                            }
-                            // line style
-                            line.outlinePaint.color = Color.RED
-                            line.outlinePaint.strokeWidth = 10f
-                            mapView.overlays.add(line)
-
-
-                        }
-
-                        SourceTypeEnum.AREA -> {
-                            val polygon = Polygon(mapView)
-                            polygon.points = source.geometry
-                            polygon.title = source.title
-                            polygon.relatedObject = MarkerData(source.id, MarkerType.SOURCE)
-                            polygon.setOnClickListener { p, _, _ ->
-                                val data = polygon.relatedObject as? MarkerData
-                                data?.let { openSourceSheet(it.id!!, db) }
-                                true
-
-                            }
-                            // polygon style
-                            polygon.fillPaint.color = Color.argb(
-                                70,
-                                255,
-                                0,
-                                0
-                            ) // semi-transparent red polygon
-                            polygon.outlinePaint.color = Color.RED
-                            polygon.outlinePaint.strokeWidth = 5f
-                            mapView.overlays.add(polygon)
-                        }
+                    // all stuff from before now in SourcDrawingManager
+                    val overlay = markerFactory.createSourceOverlay(source) { sourceId -> openSourceSheet(sourceId, db) }
+                    if (overlay != null) {
+                        mapView.overlays.add(overlay)
                     }
                 }
                 mapView.invalidate()
@@ -694,102 +598,11 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     }
 
     // fun for calculating points based on distance from source
-    private fun calculateTargetPoint(center: GeoPoint, distance: Double, bearing: Double): GeoPoint {
-        val earthRadius = 6371000.0 // Радиус Земли в метрах
+    // now in GeometryUtils
 
-        // Переводим входные данные в радианы
-        val lat1 = Math.toRadians(center.latitude)
-        val lon1 = Math.toRadians(center.longitude)
-        val bearingRad = Math.toRadians(bearing)
-        val distRatio = distance / earthRadius
-
-        // Считаем новые широту и долготу в радианах
-        val lat2Rad = asin(
-            sin(lat1) * cos(distRatio) +
-                    cos(lat1) * sin(distRatio) * cos(bearingRad)
-        )
-        val lon2Rad = lon1 + atan2(
-            sin(bearingRad) * sin(distRatio) * cos(lat1),
-            cos(distRatio) - sin(lat1) * sin(lat2Rad)
-        )
-
-        // Возвращаем готовый GeoPoint в градусах
-        return GeoPoint(Math.toDegrees(lat2Rad), Math.toDegrees(lon2Rad))
-    }
     // import
-    private fun importPlanFromFile(sourceId: Int, uri: Uri) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                // Читаем содержимое файла через ContentResolver
-                val inputStream = contentResolver.openInputStream(uri)
-                val jsonString = inputStream?.bufferedReader().use { it?.readText() } ?: ""
+    // in PlanImporter
 
-                if (jsonString.isBlank()) return@launch
-
-                // Дальше идет твой готовый рабочий код парсинга:
-                val source = db.sourceDao().findById(sourceId)
-                if (source != null && source.windDataJson != null) {
-
-                    val center = GeoPoint(
-                        source.geometry.map { p -> p.latitude }.average(),
-                        source.geometry.map { p -> p.longitude }.average()
-                    )
-
-                    val stats = WindAnalyzer.unpackStats(source.windDataJson)
-                    val maxSector = stats.maxByOrNull { it.frequency } ?: return@launch
-                    val bearing = ((maxSector.directionIndex * 45) + 180) % 360.0
-
-                    val jsonObject = JSONObject(jsonString)
-                    val pointsArray = jsonObject.getJSONObject("observationPlan").getJSONArray("points")
-
-                    val pointsToSave = ArrayList<PlannedPointEntity>()
-
-                    for (i in 0 until pointsArray.length()) {
-                        val p = pointsArray.getJSONObject(i)
-                        val distance = p.getDouble("distance")
-                        val weight = p.getDouble("weight")
-
-                        // Учитываем crosswindOffset, если он есть в JSON, иначе берем 0.0
-                        val crosswind = p.optDouble("crosswindOffset", 0.0)
-
-                        // Считаем базовую точку на оси
-                        var targetPoint = calculateTargetPoint(center, distance, bearing)
-
-                        // Если вдруг смещение вбок не нулевое, сдвигаем перпендикулярно
-                        if (crosswind != 0.0) {
-                            targetPoint = calculateTargetPoint(targetPoint, crosswind, (bearing + 90) % 360.0)
-                        }
-
-                        pointsToSave.add(
-                            PlannedPointEntity(
-                                sourceId = sourceId,
-                                latitude = targetPoint.latitude,
-                                longitude = targetPoint.longitude,
-                                distance = distance,
-                                weight = weight,
-                                isVisited = false
-                            )
-                        )
-                    }
-
-                    db.plannedPointsDao().deleteBySourceId(sourceId)
-                    db.plannedPointsDao().insertPoints(pointsToSave)
-
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "План успешно импортирован из файла!", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Сначала рассчитайте розу ветров!", Toast.LENGTH_LONG).show()
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Ошибка чтения файла: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
     // time for sample entity
     fun getCurrentTime(): String {
         val instant = Instant.ofEpochMilli(System.currentTimeMillis())
@@ -804,7 +617,6 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     // BOTTOM SHEET'S FUNCs ========================================================================
     // whole redact and delete thing from down side of the screen
     fun openMarkerSheet(marker: Marker?, point: GeoPoint?, db: AppDataBase) {
-
         // all view logic is in MarkerBottomSheet class
         // here is only executive part
 
@@ -857,7 +669,11 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         sheet.show(supportFragmentManager, "MarkerSheet")
     }
 
-    fun openSourceSheet(id: Int? = null, db: AppDataBase) {
+    fun openSourceSheet(id: Int? = null,
+                        db: AppDataBase,
+                        drawnGeometry: List<GeoPoint>? = null,
+                        drawnType: SourceTypeEnum? = null)
+    {
         val sheet = SourceBottomSheet.newInstance(id)
 
         sheet.onSave = { title, desc ->
@@ -865,8 +681,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
 
                 val expId = expRep.getOrCreateActiveId()
 
-                var finalGeometry = ArrayList(tempPoints)
-                var finalType = currentDrawingType ?: SourceTypeEnum.POINT
+                var finalGeometry = if (drawnGeometry != null) ArrayList(drawnGeometry) else ArrayList<GeoPoint>()
+                var finalType = drawnType ?: SourceTypeEnum.POINT
 
                 // edit
                 if (id != null) {
@@ -891,7 +707,7 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 )
                 db.sourceDao().insertSource(source)
 
-                if (isDrawingMode) {
+                if (drawingManager.isDrawingMode) {
                     cancelDrawing()
                 }
                 Toast.makeText(this@MainActivity, "Сохранено", Toast.LENGTH_SHORT).show()
@@ -974,192 +790,15 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     // start of drawing the source
     // type - POINT, LINE, AREA
     // firstPoint - c'mon, you got this
-    fun startDrawing(type: SourceTypeEnum, firstPoint: GeoPoint) {
-        isDrawingMode = true
-        currentDrawingType = type
-        tempPoints.clear()
-        tempPoints.add(firstPoint)
-        Log.d("DRAWING SOURCES", "start of drawing")
-        drawingControls.visibility = View.VISIBLE
-        updateDrawingPreview()
-    }
-
-    fun cancelDrawing() {
-        isDrawingMode = false
-        tempPoints.clear()
-        mapView.overlays.remove(previewOverlay)
-        previewOverlay = null
-        drawingControls.visibility = View.GONE
-        Log.d("DRAWING SOURCES", "canceled")
-        mapView.invalidate()
-        //Toast.makeText(this, "Рисование отменено", Toast.LENGTH_SHORT).show()
-    }
-
-    fun updateDrawingPreview() {
-        // removing old overlay
-        mapView.overlays.remove(previewOverlay)
-
-        // and updating
-        when (currentDrawingType) {
-            SourceTypeEnum.LINE -> {
-                val line = Polyline(mapView)
-                line.setPoints(tempPoints)
-                line.outlinePaint.color = Color.BLUE
-                previewOverlay = line
-            }
-            SourceTypeEnum.AREA -> {
-                val polygon = Polygon(mapView)
-                polygon.points = tempPoints
-                polygon.fillPaint.color = Color.argb(50, 0, 0, 255)
-                previewOverlay = polygon
-            }
-            SourceTypeEnum.POINT -> {
-                // ending right ahead
-                finishDrawing()
-                return
-            }
-            else -> {}
-        }
-        // updating overlay in mapView context
-        previewOverlay?.let { mapView.overlays.add(it) }
-        mapView.invalidate()
-    }
-
-    fun finishDrawing() {
-        val minPoints = when(currentDrawingType) {
-            SourceTypeEnum.AREA -> 3
-            SourceTypeEnum.LINE -> 2
-            else -> 1
-        }
-
-        if (tempPoints.size < minPoints) {
-            Toast.makeText(this, "Недостаточно точек!", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // creating through the sheet
-        openSourceSheet(null, db = AppDataBase.createDataBase(this))
-    }
+    // now in SourceDrawingManager
+    private fun finishDrawing() = drawingManager.finishDrawing()
+    private fun cancelDrawing() = drawingManager.cancelDrawing()
 
     // SAMPLE BY LOCATION ==========================================================================
-    @SuppressLint("MissingPermission")
-    private fun getCurrentLocationAndSave() {
-        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
-        // requesting for last registered location
-        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-            if (location != null) {
-                val lat = location.latitude
-                val lon = location.longitude
-
-                // if there is a last location - saving it
-                openMarkerSheet(null,GeoPoint(lat, lon), db)
-            } else {
-                // else
-                // requesting location now
-                val locationRequest = Priority.PRIORITY_HIGH_ACCURACY
-                fusedLocationClient.getCurrentLocation(locationRequest, null)
-                    .addOnSuccessListener { freshLocation ->
-                        if (freshLocation != null) {
-                            openMarkerSheet(null,GeoPoint(freshLocation.latitude, freshLocation.longitude), db)
-                        } else {
-                            Toast.makeText(this, "Не удалось поймать спутники. Включите GPS", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-            }
-        }
-    }
-
-    private val requestLocationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-
-        if (fineLocationGranted || coarseLocationGranted) {
-            // permissions granted
-            getCurrentLocationAndSave()
-        } else {
-            // no gps
-            Toast.makeText(this, "Без GPS нельзя определить точку пробы", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun checkPermissionAndGetLocation() {
-        val fineLoc = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-        val coarseLoc = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-
-        if (fineLoc == PackageManager.PERMISSION_GRANTED || coarseLoc == PackageManager.PERMISSION_GRANTED) {
-            getCurrentLocationAndSave()
-        } else {
-            // requesting permission
-            requestLocationPermissionLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            )
-        }
-    }
-
+    // now in MapLocationHelper
 
     // FUNCs FOR USER LOCATION ===============================================================
-    private val requestGpsOverlayLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-
-        if (fineGranted || coarseGranted) {
-            // if permission granted - activating overlay
-            activateMyLocationOverlay()
-        } else {
-            Toast.makeText(this, "Не удалось включить GPS: нет разрешений", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun checkLocationPermissionAndEnableGps() {
-        val fineLoc = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-        val coarseLoc = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-
-        if (fineLoc == PackageManager.PERMISSION_GRANTED || coarseLoc == PackageManager.PERMISSION_GRANTED) {
-            // if they granted - activating overlay
-            activateMyLocationOverlay()
-        } else {
-            // requesting permissions if they aren't granted
-            requestGpsOverlayLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            )
-        }
-    }
-
-    private fun activateMyLocationOverlay() {
-        // checking for gps and stations
-        val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
-        val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
-        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-
-        if (!isGpsEnabled && !isNetworkEnabled) {
-            Toast.makeText(this, "Включите геолокацию (GPS) в настройках телефона!", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // activating overlay
-        if (!::myLocationOverlay.isInitialized) {
-            val provider = GpsMyLocationProvider(this)
-            myLocationOverlay = MyLocationNewOverlay(provider, mapView).apply {
-                setDrawAccuracyEnabled(true)
-            }
-            mapView.overlays.add(myLocationOverlay)
-        }
-
-        // enabling and centring on user
-        myLocationOverlay.enableMyLocation()
-        myLocationOverlay.enableFollowLocation()
-
-        // smooth animation to user
-        myLocationOverlay.myLocation?.let { userPoint ->
-            mapView.controller.animateTo(userPoint)
-            mapView.controller.setZoom(18.0)
-        }
-    }
+    // now in MapLocationHelper too
 
     // =========================================================================================
     // closing all overlays infoWindows with touch
@@ -1167,19 +806,12 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
     // UPDATED: in result, i do kinda same mentioned thing
     // it seems okay
     override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-//        Toast.makeText(this, "Tapped", Toast.LENGTH_SHORT).show()
-//        InfoWindow.closeAllInfoWindowsOn(mapView);
-//        return true
-
         // adding points in drawing mode
-        if (isDrawingMode && p != null) {
-            tempPoints.add(p)
-            updateDrawingPreview()
+        if (drawingManager.isDrawingMode && p != null) {
+            drawingManager.addPoint(p)
             return true
         }
         clearWindRose()
-        //createTestSourceWithWind(db)
-        //testWindApi()
         return false
     }
 
@@ -1195,10 +827,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
                 .setItems(options) { _, which ->
                     when (which) {
                         0 -> openMarkerSheet(null, point, AppDataBase.createDataBase(this)) // sample
-                        1 -> checkPermissionAndGetLocation()
-                        2 -> startDrawing(SourceTypeEnum.POINT, point)
-                        3 -> startDrawing(SourceTypeEnum.LINE, point)
-                        4 -> startDrawing(SourceTypeEnum.AREA, point)
+                        1 -> locationHelper.checkPermissionAndGetLocation()
+                        2 -> drawingManager.startDrawing(SourceTypeEnum.POINT, point)
+                        3 -> drawingManager.startDrawing(SourceTypeEnum.LINE, point)
+                        4 -> drawingManager.startDrawing(SourceTypeEnum.AREA, point)
 
                     }
                 }
@@ -1251,16 +883,10 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
         if (::mapView.isInitialized) {
             mapView.onPause()
         }
-//        if (::mapNorthCompassOverlay.isInitialized) {
-//            mapNorthCompassOverlay.disableCompass()
-//        }
         // battery save-wise feature
-        if (::myLocationOverlay.isInitialized) {
-            myLocationOverlay.disableMyLocation()
+        if (::locationHelper.isInitialized) {
+            locationHelper.disableMyLocation()
         }
-//        if (::mapNorthCompassOverlay.isInitialized) {
-//            mapNorthCompassOverlay.disableCompass()
-//        }
         saveMapState()
 
     }
@@ -1275,15 +901,8 @@ class MainActivity : AppCompatActivity(), MapEventsReceiver  {
             currentPeriod = newPeriod
         }
         // enabling after onPause
-        if (::myLocationOverlay.isInitialized) {
-            myLocationOverlay.enableMyLocation()
+        if (::locationHelper.isInitialized) {
+            locationHelper.enableMyLocationIfInitialized()
         }
-        // checking for change of compass setting and enabling compass
-//        if (::mapNorthCompassOverlay.isInitialized) {
-//            configureCompassProvider()
-//        }
-//        if (::mapView.isInitialized) {
-//            mapView.invalidate()
-//        }
     }
 }

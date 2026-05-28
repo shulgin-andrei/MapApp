@@ -27,6 +27,6 @@ data class SourceEntity (
     val title: String,
     val description: String,
     val geometry: List<GeoPoint>,
-    val hazardLevel: Double = 1.0, // approximate thing, dunno how to measure this
+    val hazardLevel: Double = 1.0, // approximate thing, dunno how to measure this УБРАТЬ НАДО
     var windDataJson: String? = null // data for windRozeOverlay
 )

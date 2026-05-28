@@ -1,4 +1,4 @@
-package com.andrey.mapapp.utils
+package com.andrey.mapapp.utils.wind
 
 data class WindStat(
     val directionIndex: Int,    // 0..7 from north to west-north по часовой

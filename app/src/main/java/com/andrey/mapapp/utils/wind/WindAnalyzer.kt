@@ -1,4 +1,4 @@
-package com.andrey.mapapp.utils
+package com.andrey.mapapp.utils.wind
 
 import com.andrey.mapapp.data.network.WeatherResponse
 import com.google.gson.Gson

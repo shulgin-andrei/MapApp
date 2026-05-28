@@ -134,6 +134,7 @@ class ExpeditionSamplesActivity : AppCompatActivity() {
 
                 // sample date
                 val properties = JSONObject()
+                properties.put("id", sample.id)
                 properties.put("name", sample.title)
                 properties.put("description", sample.description)
                 //properties.put("expeditionId", expeditionId)

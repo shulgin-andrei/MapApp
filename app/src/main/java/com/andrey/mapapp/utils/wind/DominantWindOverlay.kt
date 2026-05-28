@@ -1,4 +1,4 @@
-package com.andrey.mapapp.utils
+package com.andrey.mapapp.utils.wind
 
 import android.graphics.Canvas
 import android.graphics.Color
